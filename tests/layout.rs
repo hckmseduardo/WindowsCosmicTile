@@ -110,3 +110,23 @@ fn direction_chooses_neighbor_in_requested_half_plane() {
     assert_eq!(neighbor(&frames, 1, 1, 0), Some(2));
     assert_eq!(neighbor(&frames, 1, -1, 0), None);
 }
+#[test]
+fn transfer_waits_for_destination_instead_of_reinserting_on_source() {
+    use cosmitile::core::Transfers;
+    use std::time::{Duration, Instant};
+    let now = Instant::now();
+    let mut transfers = Transfers::default();
+    transfers.request(1, "secondary".into(), now);
+    assert!(transfers.defer(1, "primary", now + Duration::from_millis(100)));
+    assert!(!transfers.defer(1, "secondary", now + Duration::from_millis(200)));
+    assert!(!transfers.defer(1, "primary", now + Duration::from_millis(300)));
+}
+#[test]
+fn refused_transfer_expires_without_hiding_window_forever() {
+    use cosmitile::core::Transfers;
+    use std::time::{Duration, Instant};
+    let now = Instant::now();
+    let mut transfers = Transfers::default();
+    transfers.request(1, "secondary".into(), now);
+    assert!(!transfers.defer(1, "primary", now + Duration::from_secs(3)));
+}

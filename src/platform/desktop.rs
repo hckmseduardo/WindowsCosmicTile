@@ -34,7 +34,6 @@ pub struct Window {
 #[derive(Clone)]
 pub struct Original {
     pub placement: WINDOWPLACEMENT,
-    pub raw: Rect,
     pub pid: u32,
     pub monitor: String,
 }
@@ -164,21 +163,32 @@ pub unsafe fn snapshot(window: &Window, monitor: String) -> Option<Original> {
     }
     Some(Original {
         placement,
-        raw: raw_frame(window.id as HWND)?,
         pid: window.pid,
         monitor,
     })
 }
-pub unsafe fn set_frame(id: isize, frame: Rect) -> bool {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PositionStatus {
+    Queued,
+    Restoring,
+    Failed,
+}
+pub unsafe fn set_frame(id: isize, frame: Rect) -> PositionStatus {
     let hwnd = id as HWND;
     if IsWindow(hwnd) == 0 {
-        return false;
+        return PositionStatus::Failed;
     }
     if IsZoomed(hwnd) != 0 {
-        ShowWindow(hwnd, SW_RESTORE);
+        // Wait for restoration before measuring nonclient borders: maximized
+        // offsets differ from normal-window offsets.
+        return if ShowWindowAsync(hwnd, SW_RESTORE) != 0 {
+            PositionStatus::Restoring
+        } else {
+            PositionStatus::Failed
+        };
     }
     let Some(raw) = raw_frame(hwnd) else {
-        return false;
+        return PositionStatus::Failed;
     };
     let visible = visible_frame(hwnd).unwrap_or(raw);
     // DWM excludes invisible resize borders, unlike GetWindowRect.
@@ -186,47 +196,95 @@ pub unsafe fn set_frame(id: isize, frame: Rect) -> bool {
     let top = visible.y - raw.y;
     let right = raw.right() - visible.right();
     let bottom = raw.bottom() - visible.bottom();
-    SetWindowPos(
+    let queued = SetWindowPos(
         hwnd,
         null_mut(),
         frame.x - left,
         frame.y - top,
         (frame.w + left + right).max(1),
         (frame.h + top + bottom).max(1),
-        SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER,
-    ) != 0
+        SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS,
+    ) != 0;
+    if queued {
+        PositionStatus::Queued
+    } else {
+        PositionStatus::Failed
+    }
+}
+fn restore_placement(mut original: WINDOWPLACEMENT, minimized: bool) -> WINDOWPLACEMENT {
+    original.flags |= WPF_ASYNCWINDOWPLACEMENT;
+    if minimized {
+        if original.showCmd == SW_SHOWMAXIMIZED as u32 {
+            original.flags |= WPF_RESTORETOMAXIMIZED;
+            original.showCmd = SW_SHOWMINIMIZED as u32;
+        } else {
+            original.flags &= !WPF_RESTORETOMAXIMIZED;
+            original.showCmd = SW_SHOWMINNOACTIVE as u32;
+        }
+    }
+    original
+}
+pub unsafe fn monitor_id(hwnd: HWND) -> Option<String> {
+    let handle = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL);
+    let mut info: MONITORINFOEXW = zeroed();
+    info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
+    if handle.is_null() || GetMonitorInfoW(handle, &mut info.monitorInfo) == 0 {
+        return None;
+    }
+    let end = info
+        .szDevice
+        .iter()
+        .position(|value| *value == 0)
+        .unwrap_or(info.szDevice.len());
+    Some(String::from_utf16_lossy(&info.szDevice[..end]))
 }
 pub unsafe fn restore(id: isize, original: &Original, monitors: &[Monitor]) {
     let hwnd = id as HWND;
     if IsWindow(hwnd) == 0 || pid(hwnd) != original.pid {
         return;
     }
-    if let Some(monitor) = monitors
+    if monitors
         .iter()
-        .find(|monitor| monitor.id == original.monitor)
+        .any(|monitor| monitor.id == original.monitor)
     {
-        let placement = original.placement;
-        let raw = original.raw.clamped(monitor.work);
-        if original.placement.showCmd == SW_SHOWMAXIMIZED as u32 || raw == original.raw {
-            SetWindowPlacement(hwnd, &placement);
-        } else {
-            // WINDOWPLACEMENT uses workspace coordinates; SetWindowPos uses desktop coordinates.
-            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-            SetWindowPos(
-                hwnd,
-                null_mut(),
-                raw.x,
-                raw.y,
-                raw.w,
-                raw.h,
-                SWP_NOACTIVATE | SWP_NOZORDER,
-            );
-        }
+        // WINDOWPLACEMENT retains workspace coordinates, minimized state, and
+        // restore-to-maximized behavior. Windows adjusts obsolete work areas.
+        let placement = restore_placement(original.placement, IsIconic(hwnd) != 0);
+        SetWindowPlacement(hwnd, &placement);
     }
 }
 pub unsafe fn focus(id: isize) {
     let hwnd = id as HWND;
     if IsWindow(hwnd) != 0 {
         SetForegroundWindow(hwnd);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn minimized_restore_preserves_saved_normal_position() {
+        let mut original: WINDOWPLACEMENT = unsafe { zeroed() };
+        original.showCmd = SW_SHOWNORMAL as u32;
+        original.rcNormalPosition = RECT {
+            left: 100,
+            top: 120,
+            right: 900,
+            bottom: 720,
+        };
+        let restored = restore_placement(original, true);
+        assert_eq!(restored.showCmd, SW_SHOWMINNOACTIVE as u32);
+        assert_eq!(restored.rcNormalPosition.left, 100);
+        assert_eq!(restored.rcNormalPosition.right, 900);
+        assert_ne!(restored.flags & WPF_ASYNCWINDOWPLACEMENT, 0);
+    }
+    #[test]
+    fn minimized_originally_maximized_window_restores_to_maximized_later() {
+        let mut original: WINDOWPLACEMENT = unsafe { zeroed() };
+        original.showCmd = SW_SHOWMAXIMIZED as u32;
+        let restored = restore_placement(original, true);
+        assert_ne!(restored.flags & WPF_RESTORETOMAXIMIZED, 0);
+        assert_eq!(restored.showCmd, SW_SHOWMINIMIZED as u32);
     }
 }

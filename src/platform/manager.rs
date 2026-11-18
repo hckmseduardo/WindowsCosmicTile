@@ -1,6 +1,6 @@
 use super::{desktop::*, hotkeys, indicator::Indicator};
 use cosmitile::{
-    core::{choose_target, neighbor, Axis, Layout, MonitorState},
+    core::{choose_target, neighbor, Axis, Layout, MonitorState, Transfers},
     i18n::Language,
 };
 use std::{
@@ -13,6 +13,12 @@ use windows_sys::Win32::{
     UI::{Input::KeyboardAndMouse::GetAsyncKeyState, WindowsAndMessaging::*},
 };
 
+#[derive(Clone)]
+struct PendingPosition {
+    frame: cosmitile::core::Rect,
+    deadline: std::time::Instant,
+    pid: u32,
+}
 pub struct Manager {
     pub hwnd: HWND,
     pub monitors: Vec<Monitor>,
@@ -21,6 +27,8 @@ pub struct Manager {
     pub windows: BTreeMap<isize, Window>,
     pub originals: BTreeMap<isize, Original>,
     pub floating: BTreeSet<isize>,
+    pub pending_transfers: Transfers,
+    pending_positions: BTreeMap<isize, PendingPosition>,
     pub previous_focus: Option<isize>,
     pub command_target: Option<isize>,
     pub hint: Indicator,
@@ -41,6 +49,8 @@ impl Manager {
             windows: BTreeMap::new(),
             originals: BTreeMap::new(),
             floating: BTreeSet::new(),
+            pending_transfers: Transfers::default(),
+            pending_positions: BTreeMap::new(),
             previous_focus: None,
             command_target: None,
             hint: Indicator::new(),
@@ -158,13 +168,9 @@ impl Manager {
             .map(|(id, _)| *id)
             .collect();
         for id in ids {
+            self.pending_positions.remove(&id);
             if let Some(original) = self.originals.remove(&id) {
-                if visible_frame(id as HWND)
-                    .and_then(|r| monitor_for(&self.monitors, r))
-                    .as_deref()
-                    == Some(key)
-                    && IsIconic(id as HWND) == 0
-                {
+                if monitor_id(id as HWND).as_deref() == Some(key) {
                     restore(id, &original, &self.monitors);
                 }
             }
@@ -174,6 +180,8 @@ impl Manager {
     }
     pub unsafe fn restore_all(&mut self) {
         self.set_resize(false);
+        self.pending_positions.clear();
+        self.pending_transfers = Transfers::default();
         let owners: BTreeSet<_> = self
             .originals
             .values()
@@ -190,6 +198,7 @@ impl Manager {
         if GetAsyncKeyState(1) < 0 {
             return;
         }
+        self.retry_positions();
         let old_monitors = self.monitors.clone();
         self.monitors = monitors();
         self.policy.retain_connected(
@@ -227,6 +236,8 @@ impl Manager {
         self.originals
             .retain(|id, original| IsWindow(*id as HWND) != 0 && pid(*id as HWND) == original.pid);
         self.floating.retain(|id| self.originals.contains_key(id));
+        let now = std::time::Instant::now();
+        self.pending_transfers.expire(now);
         let current_focus = self.focused_id();
         let windows: Vec<_> = self.windows.values().cloned().collect();
         for window in windows {
@@ -236,11 +247,23 @@ impl Manager {
             let Some(key) = monitor_for(&self.monitors, window.frame) else {
                 continue;
             };
-            if !self.policy.enabled(&key)
-                || self
-                    .layouts
-                    .get(&key)
-                    .is_some_and(|tree| tree.contains(window.id))
+            if self.pending_transfers.defer(window.id, &key, now) {
+                continue;
+            }
+            if !self.policy.enabled(&key) {
+                if self
+                    .originals
+                    .get(&window.id)
+                    .is_some_and(|original| original.monitor != key)
+                {
+                    self.originals.remove(&window.id);
+                }
+                continue;
+            }
+            if self
+                .layouts
+                .get(&key)
+                .is_some_and(|tree| tree.contains(window.id))
             {
                 continue;
             }
@@ -281,26 +304,77 @@ impl Manager {
         }
         self.refresh_hint();
     }
+    unsafe fn queue_position(&mut self, id: isize, frame: cosmitile::core::Rect) -> bool {
+        let Some(window) = self.windows.get(&id) else {
+            return false;
+        };
+        let process = window.pid;
+        if let Some(pending) = self.pending_positions.get_mut(&id) {
+            pending.frame = frame;
+            return true;
+        }
+        match set_frame(id, frame) {
+            PositionStatus::Queued => true,
+            PositionStatus::Restoring => {
+                self.pending_positions.insert(
+                    id,
+                    PendingPosition {
+                        frame,
+                        deadline: std::time::Instant::now() + std::time::Duration::from_secs(2),
+                        pid: process,
+                    },
+                );
+                true
+            }
+            PositionStatus::Failed => false,
+        }
+    }
+    unsafe fn retry_positions(&mut self) {
+        let requests: Vec<_> = self
+            .pending_positions
+            .iter()
+            .map(|(id, request)| (*id, request.clone()))
+            .collect();
+        for (id, request) in requests {
+            if std::time::Instant::now() >= request.deadline || pid(id as HWND) != request.pid {
+                self.pending_positions.remove(&id);
+                self.failures += 1;
+                continue;
+            }
+            if IsZoomed(id as HWND) != 0 {
+                continue;
+            }
+            match set_frame(id, request.frame) {
+                PositionStatus::Queued => {
+                    self.pending_positions.remove(&id);
+                }
+                PositionStatus::Failed => {
+                    self.pending_positions.remove(&id);
+                    self.failures += 1;
+                }
+                PositionStatus::Restoring => (),
+            }
+        }
+    }
     pub unsafe fn apply(&mut self) {
         self.failures = 0;
+        let mut requests = Vec::new();
         for monitor in &self.monitors {
             if !self.policy.enabled(&monitor.id) {
                 continue;
             }
             if let Some(tree) = self.layouts.get(&monitor.id) {
-                for (id, frame) in tree.frames(monitor.work.inset(self.gap), self.gap) {
-                    if let Some(window) = self.windows.get_mut(&id) {
-                        if pid(id as HWND) != window.pid {
-                            continue;
-                        }
-                        if !set_frame(id, frame) {
-                            self.failures += 1;
-                        }
-                        if let Some(actual) = visible_frame(id as HWND) {
-                            window.frame = actual;
-                        }
-                    }
-                }
+                requests.extend(tree.frames(monitor.work.inset(self.gap), self.gap));
+            }
+        }
+        for (id, frame) in requests {
+            if self
+                .windows
+                .get(&id)
+                .is_some_and(|window| pid(id as HWND) == window.pid)
+                && !self.queue_position(id, frame)
+            {
+                self.failures += 1;
             }
         }
         self.refresh_hint();
@@ -424,23 +498,28 @@ impl Manager {
         if self.monitors.len() < 2 {
             return;
         }
-        let Some(index) = self.monitors.iter().position(|m| m.id == key) else {
+        let Some(index) = self.monitors.iter().position(|monitor| monitor.id == key) else {
             return;
         };
         let destination = self.monitors[(index + 1) % self.monitors.len()].clone();
+        let Some(window) = self.windows.get(&id) else {
+            return;
+        };
+        let mut frame = window.frame.clamped(destination.work.inset(self.gap));
+        frame.x = destination.work.x + self.gap;
+        frame.y = destination.work.y + self.gap;
+        if !self.queue_position(id, frame) {
+            self.failures += 1;
+            return;
+        }
         if let Some(tree) = self.layouts.remove(&key).and_then(|tree| tree.remove(id)) {
             self.layouts.insert(key, tree);
         }
         self.floating.remove(&id);
-        self.originals.remove(&id);
-        if let Some(window) = self.windows.get_mut(&id) {
-            let mut frame = window.frame.clamped(destination.work.inset(self.gap));
-            frame.x = destination.work.x + self.gap;
-            frame.y = destination.work.y + self.gap;
-            set_frame(id, frame);
-            window.frame = visible_frame(id as HWND).unwrap_or(frame);
-        }
-        self.reconcile();
+        self.pending_transfers
+            .request(id, destination.id, std::time::Instant::now());
+        // Do not rescan immediately: SWP_ASYNCWINDOWPOS queues the move on the
+        // target thread. Rejoin only after observing its destination (or timeout).
         self.apply();
         focus(id);
     }

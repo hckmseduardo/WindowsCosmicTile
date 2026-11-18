@@ -164,7 +164,7 @@ The portable engine can also be tested on macOS/Linux with `cargo test`; the app
 | `src/platform/hotkeys.rs` | Permanent and temporary global hotkeys |
 | `src/platform/mod.rs` | Win32 message loop, tray menu and focus-event hook |
 
-The process is per-monitor DPI aware. Geometry comes from `MONITORINFO.rcWork`, and DWM visible bounds compensate for invisible resize borders. A foreground-event hook refreshes state, with roughly 360 ms reconciliation and 120 ms hint polling as fallback. Stable layouts are not rewritten on every tick. Mouse dragging pauses reconciliation.
+The process is per-monitor DPI aware. Geometry comes from `MONITORINFO.rcWork`, and DWM visible bounds compensate for invisible resize borders. A foreground-event hook refreshes state, with roughly 360 ms reconciliation and 120 ms hint polling as fallback. Cross-process positioning is asynchronous, maximized windows are restored before border measurements, and queued transfers have bounded retry state. Stable layouts are not rewritten on every tick. Mouse dragging pauses reconciliation.
 
 ## Troubleshooting and limitations
 
@@ -182,7 +182,7 @@ No tabbed stacks, drag previews, per-virtual-desktop layout persistence, arbitra
 
 ## Validation and releases
 
-Tests cover negative-coordinate geometry, gaps, insertion of newly focused windows, removal, directional resizing, rotation, swaps, independent display activation, display removal, restoration bounds, dialog exclusions, placement, focus direction and language fallback. Both Windows targets are type-checked before publication.
+The suite includes 15 portable tests plus 2 Windows-specific restoration-policy tests. Tests cover negative-coordinate geometry, gaps, insertion of newly focused windows, removal, directional resizing, rotation, swaps, independent display activation, display removal, restoration bounds, dialog exclusions, placement, focus direction and language fallback. Both Windows targets are type-checked before publication.
 
 The [build workflow](.github/workflows/build.yml) runs formatting, unit tests, native lint and release builds on x64 and ARM64 Windows jobs. Tagging `v*` publishes portable ZIPs and checksums only after both jobs succeed. Successful hosted builds do not establish interactive desktop behavior on your hardware.
 

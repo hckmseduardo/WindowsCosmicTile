@@ -318,3 +318,28 @@ pub fn window_eligible(child: bool, resizable: bool, auxiliary: bool, class_name
         && class_name != "WorkerW"
         && class_name != "Shell_TrayWnd"
 }
+
+/// A queued Win32 move must be observed before the window rejoins a layout.
+#[derive(Default)]
+pub struct Transfers {
+    pending: BTreeMap<isize, (String, std::time::Instant)>,
+}
+impl Transfers {
+    pub fn request(&mut self, id: isize, destination: String, now: std::time::Instant) {
+        self.pending
+            .insert(id, (destination, now + std::time::Duration::from_secs(2)));
+    }
+    pub fn defer(&mut self, id: isize, actual: &str, now: std::time::Instant) -> bool {
+        let waiting = self
+            .pending
+            .get(&id)
+            .is_some_and(|(destination, deadline)| destination != actual && now < *deadline);
+        if !waiting {
+            self.pending.remove(&id);
+        }
+        waiting
+    }
+    pub fn expire(&mut self, now: std::time::Instant) {
+        self.pending.retain(|_, (_, deadline)| now < *deadline);
+    }
+}

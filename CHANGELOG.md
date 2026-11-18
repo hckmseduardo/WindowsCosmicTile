@@ -16,6 +16,12 @@
 - Structural exclusion of save/open dialogs, owned modal windows, utility and fixed-size windows.
 - Unit tests, dual-architecture build/release workflow and portable ZIP packaging.
 
+### Reliability
+- Queue cross-process positioning asynchronously so an unresponsive application does not block the manager UI thread.
+- Defer positioning of maximized windows until restoration is observed, then measure normal-window borders.
+- Keep bounded pending-transfer state instead of reinserting a queued move on the source display.
+- Restore saved normal placement while preserving minimized state and supported restore-to-maximized flags.
+
 ### Known limitations
 - Initial preview: interactive application compatibility and multi-monitor/DPI scenarios need live Windows validation.
 - Minimum-size heuristics do not guarantee non-overlap for all applications.

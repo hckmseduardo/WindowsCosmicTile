@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Release publishing now updates existing release assets instead of failing when a tag already has a release.
+- Manual release rebuilds check out the requested existing tag, verify both architecture packages and checksums, and preserve the existing release metadata.
+
 ## 0.1.0
 
 ### Added

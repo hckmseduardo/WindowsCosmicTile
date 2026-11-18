@@ -184,6 +184,6 @@ No tabbed stacks, drag previews, per-virtual-desktop layout persistence, arbitra
 
 The suite includes 15 portable tests plus 2 Windows-specific restoration-policy tests. Tests cover negative-coordinate geometry, gaps, insertion of newly focused windows, removal, directional resizing, rotation, swaps, independent display activation, display removal, restoration bounds, dialog exclusions, placement, focus direction and language fallback. Both Windows targets are type-checked before publication.
 
-The [build workflow](.github/workflows/build.yml) runs formatting, unit tests, native lint and release builds on x64 and ARM64 Windows jobs. Tagging `v*` publishes portable ZIPs and checksums only after both jobs succeed. Successful hosted builds do not establish interactive desktop behavior on your hardware.
+The [build workflow](.github/workflows/build.yml) runs formatting, unit tests, native lint and release builds on x64 and ARM64 Windows jobs. Tagging `v*` publishes portable ZIPs and checksums only after both jobs succeed. Publishing is repeatable: existing releases receive refreshed assets. To rebuild an existing release, run **Windows builds → Run workflow** with its existing `release_tag` (for example `v0.1.0`); the workflow builds that tag, verifies both package checksums, and retains the release metadata. Successful hosted builds do not establish interactive desktop behavior on your hardware.
 
 See [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md), [design notes](docs/DESIGN.md), and [release notes](docs/RELEASE_NOTES.md).

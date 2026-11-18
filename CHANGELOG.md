@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
+
+### Branding
+- Embed the shared CosmicTile icon in Explorer executable resources, the native window class and the notification-area icon.
+- Use CosmicTile as the shared product name while retaining platform-specific executable/package names.
+- Verify embedded icons at 16, 32, 48 and 256 px on native x64 and ARM64 test jobs.
 
 ### Fixed
 - Release publishing now updates existing release assets instead of failing when a tag already has a release.

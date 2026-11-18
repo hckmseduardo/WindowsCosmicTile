@@ -5,7 +5,7 @@ mod indicator;
 mod manager;
 
 use cosmitile::{core::Axis, i18n::Language};
-use desktop::wide;
+use desktop::{wide, APP_ICON_RESOURCE};
 use manager::Manager;
 use std::{
     cell::{Cell, RefCell},
@@ -41,10 +41,10 @@ unsafe fn tray(manager: &Manager, operation: u32) {
     data.uID = 1;
     data.uCallbackMessage = TRAY;
     data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
-    data.hIcon = LoadIconW(null_mut(), IDI_APPLICATION);
+    data.hIcon = manager.brand_icon;
     let mode = if manager.resize { " · RESIZE" } else { "" };
     let text = wide(&format!(
-        "WindowsCosmicTile · {}/{} {}{}",
+        "CosmicTile · {}/{} {}{}",
         manager.policy.active.len(),
         manager.monitors.len(),
         manager.language.text("Display"),
@@ -76,7 +76,7 @@ unsafe fn show_menu(manager: &mut Manager) {
         return;
     }
     let language = manager.language;
-    append(menu, 0, "WindowsCosmicTile · v0.1.0", false);
+    append(menu, 0, "CosmicTile · v0.1.1", false);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     for (index, monitor) in manager.monitors.iter().enumerate() {
         append(
@@ -259,7 +259,7 @@ unsafe fn command(manager: &mut Manager, id: i32) {
         }
         10 => help(manager),
         11 => {
-            MessageBoxW(manager.hwnd, wide(&format!("WindowsCosmicTile v0.1.0\n{}\nhttps://github.com/hckmseduardo/WindowsCosmicTile", manager.language.text("Native Rust + Win32 preview. Starts with tiling off. Save/Open dialogs stay floating."))).as_ptr(), wide("WindowsCosmicTile").as_ptr(), MB_OK);
+            MessageBoxW(manager.hwnd, wide(&format!("CosmicTile v0.1.1\n{}\nhttps://github.com/hckmseduardo/WindowsCosmicTile", manager.language.text("Native Rust + Win32 preview. Starts with tiling off. Save/Open dialogs stay floating."))).as_ptr(), wide("WindowsCosmicTile").as_ptr(), MB_OK);
         }
         12 => {
             PostMessageW(manager.hwnd, WM_CLOSE, 0, 0);
@@ -393,6 +393,7 @@ pub fn run() {
         let instance = GetModuleHandleW(null());
         let class = wide("WindowsCosmicTile.Controller");
         let definition = WNDCLASSW {
+            hIcon: LoadIconW(instance, APP_ICON_RESOURCE),
             lpfnWndProc: Some(procedure),
             hInstance: instance,
             lpszClassName: class.as_ptr(),
@@ -451,5 +452,27 @@ pub fn run() {
         });
         OWNER.with(|owner| owner.set(null_mut()));
         CloseHandle(mutex);
+    }
+}
+
+#[cfg(test)]
+mod brand_tests {
+    use super::*;
+    #[test]
+    fn shared_icon_is_embedded_in_the_native_executable() {
+        unsafe {
+            let instance = GetModuleHandleW(null());
+            for size in [16, 32, 48, 256] {
+                let icon = LoadImageW(
+                    instance,
+                    APP_ICON_RESOURCE,
+                    IMAGE_ICON,
+                    size,
+                    size,
+                    LR_SHARED,
+                );
+                assert!(!icon.is_null(), "Missing CosmicTile icon at {size}px");
+            }
+        }
     }
 }

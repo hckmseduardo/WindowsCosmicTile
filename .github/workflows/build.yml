@@ -71,6 +71,8 @@ jobs:
           if ($machine -ne $expected) { throw "Unexpected PE architecture: $machine" }
           Copy-Item $exe "$stage\WindowsCosmicTile.exe"
           Copy-Item README.md, CHANGELOG.md, docs\QUICKSTART.md $stage
+          New-Item -ItemType Directory -Force "$stage\assets\brand" | Out-Null
+          Copy-Item assets\brand\app-icon.png, assets\brand\BRAND.md "$stage\assets\brand"
           Compress-Archive -Path "$stage\*" -DestinationPath "dist\$name.zip"
           $hash = (Get-FileHash "dist\$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $name.zip" | Set-Content "dist\$name.sha256" -Encoding utf8NoBOM

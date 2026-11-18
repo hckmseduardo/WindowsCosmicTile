@@ -1,7 +1,7 @@
 # Quick start
 
 1. Extract the ZIP for your CPU: x64 for Intel/AMD, arm64 for Windows on ARM.
-2. Launch WindowsCosmicTile.exe. The app starts in the notification area, with all displays floating.
+2. Launch WindowsCosmicTile.exe. CosmicTile starts in the notification area, with all displays floating.
 3. Click the tray icon (look in the hidden-icons overflow if needed) and enable individual displays.
 4. Use Ctrl + Alt + T to toggle the focused display; add Shift to toggle all displays.
 5. Use Ctrl + Alt + R to enter resize mode. Arrow keys adjust width/height. Escape, Enter or the same shortcut exits.

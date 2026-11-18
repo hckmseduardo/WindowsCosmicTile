@@ -21,6 +21,7 @@ struct PendingPosition {
 }
 pub struct Manager {
     pub hwnd: HWND,
+    pub brand_icon: HICON,
     pub monitors: Vec<Monitor>,
     pub policy: MonitorState,
     pub layouts: BTreeMap<String, Layout>,
@@ -41,8 +42,19 @@ pub struct Manager {
 }
 impl Manager {
     pub unsafe fn new(hwnd: HWND) -> Self {
+        let instance =
+            windows_sys::Win32::System::LibraryLoader::GetModuleHandleW(std::ptr::null());
+        let brand_icon = LoadImageW(
+            instance,
+            APP_ICON_RESOURCE,
+            IMAGE_ICON,
+            GetSystemMetrics(SM_CXSMICON),
+            GetSystemMetrics(SM_CYSMICON),
+            LR_SHARED,
+        ) as HICON;
         let mut result = Self {
             hwnd,
+            brand_icon,
             monitors: monitors(),
             policy: MonitorState::default(),
             layouts: BTreeMap::new(),

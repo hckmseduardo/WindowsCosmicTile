@@ -3,7 +3,7 @@
 mod platform;
 fn main() {
     if std::env::args().any(|argument| argument == "--version") {
-        println!("WindowsCosmicTile {}", env!("CARGO_PKG_VERSION"));
+        println!("CosmicTile {}", env!("CARGO_PKG_VERSION"));
         return;
     }
     #[cfg(windows)]

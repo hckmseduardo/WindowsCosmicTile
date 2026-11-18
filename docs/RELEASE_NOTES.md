@@ -1,6 +1,11 @@
-## WindowsCosmicTile v0.1.0 preview
+## WindowsCosmicTile v0.1.1 preview
 
 Native Rust + Win32 builds for **Windows x64** and **Windows ARM64**. Choose the ZIP matching your CPU; the ARM64 asset is a native ARM64 build, not an x64 executable with a different filename.
+
+### New in this release
+- Shared CosmicTile icon embedded directly into the executable and notification-area icon.
+- Same underlying artwork as the macOS app, with platform-specific icon packaging.
+- Repeatable release publishing updates assets when the release already exists.
 
 ### Features
 - Independent tiling per monitor; new displays and startup default to floating.

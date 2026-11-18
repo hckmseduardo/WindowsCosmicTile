@@ -14,6 +14,9 @@ use windows_sys::{
     },
 };
 
+// Win32 encodes MAKEINTRESOURCE(1) in a pointer-sized value; it is never dereferenced.
+pub const APP_ICON_RESOURCE: *const u16 = std::ptr::without_provenance::<u16>(1);
+
 pub fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(Some(0)).collect()
 }

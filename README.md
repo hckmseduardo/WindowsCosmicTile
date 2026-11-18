@@ -11,18 +11,18 @@ Independent monitors · Visible focus · Keyboard resizing · No web runtime
 
 [![Windows builds](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml/badge.svg)](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml)
 
-[Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.1.1) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
+[Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.2.0) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
 
 </div>
 
-> **v0.1.1 preview.** Independent project, not affiliated with System76. Native builds are provided for **x64** and **ARM64**. This is a first Windows implementation, not a claim of complete COSMIC feature parity or compatibility with every application.
+> **v0.2.0 preview.** Independent project, not affiliated with System76. Native builds are provided for **x64** and **ARM64**. This is a first Windows implementation, not a claim of complete COSMIC feature parity or compatibility with every application.
 
 ## Choose your download
 
 | Your computer | Native package |
 | --- | --- |
-| Intel / AMD 64-bit Windows | [Windows x64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.1.1/WindowsCosmicTile-v0.1.1-windows-x64.zip) |
-| Windows on ARM, including Snapdragon | [Windows ARM64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.1.1/WindowsCosmicTile-v0.1.1-windows-arm64.zip) |
+| Intel / AMD 64-bit Windows | [Windows x64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.0/WindowsCosmicTile-v0.2.0-windows-x64.zip) |
+| Windows on ARM, including Snapdragon | [Windows ARM64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.0/WindowsCosmicTile-v0.2.0-windows-arm64.zip) |
 
 The ARM64 file is built for `aarch64-pc-windows-msvc`; it is not a renamed x64 executable. Both are 64-bit builds. The app targets current Windows 10/11 desktop systems; Windows 11 is recommended, particularly on ARM. Windows 10 application compatibility has not been interactively validated.
 
@@ -66,7 +66,7 @@ The executable is **not Authenticode signed**. SmartScreen can warn about an unk
 Every release ZIP has a matching `.sha256` file:
 
 ```powershell
-Get-FileHash .\WindowsCosmicTile-v0.1.1-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\WindowsCosmicTile-v0.2.0-windows-x64.zip -Algorithm SHA256
 ```
 
 Compare the hash with the text in the corresponding checksum file.
@@ -108,6 +108,14 @@ Gap, hint state/color and language are stored in:
 ```
 
 Layout trees, active-display switches and floating-window state are session-only. The app does not install a startup entry or send window metadata over the network.
+
+## Updates
+
+The tray menu checks GitHub releases automatically at startup and at most once per day. Turn **Automatically check for updates** off to stop scheduled checks, or choose **Check for updates** for a manual check. Preview releases are included. English remains the default UI, with French and Portuguese options.
+
+A newer compatible release shows its version and release notes in a native confirmation dialog. Only **Yes** authorizes downloading the ZIP for your CPU. No response or **No** downloads nothing. A declined version is not prompted again automatically; manual checks let you reconsider.
+
+Downloads go to your Windows **Downloads/CosmicTile Updates** folder. The app verifies the exact byte length and GitHub-provided SHA-256 before publishing the ZIP, then opens the folder. **Installation is manual:** quit CosmicTile, extract the ZIP, and replace your old copy yourself. The updater never replaces or launches an executable. See [update behavior and integrity](docs/UPDATES.md).
 
 ## Keyboard shortcuts
 
@@ -186,7 +194,7 @@ No tabbed stacks, drag previews, per-virtual-desktop layout persistence, arbitra
 
 The suite includes 15 portable tests plus 3 Windows-specific restoration/resource tests. Tests cover negative-coordinate geometry, gaps, insertion of newly focused windows, removal, directional resizing, rotation, swaps, independent display activation, display removal, restoration bounds, dialog exclusions, placement, focus direction and language fallback. Both Windows targets are type-checked before publication.
 
-The [build workflow](.github/workflows/build.yml) runs formatting, unit tests, native lint and release builds on x64 and ARM64 Windows jobs. Tagging `v*` publishes portable ZIPs and checksums only after both jobs succeed. Publishing is repeatable: existing releases receive refreshed assets. To rebuild an existing release, run **Windows builds → Run workflow** with its existing `release_tag` (for example `v0.1.1`); the workflow builds that tag, verifies both package checksums, and retains the release metadata. Successful hosted builds do not establish interactive desktop behavior on your hardware.
+The [build workflow](.github/workflows/build.yml) runs formatting, unit tests, native lint and release builds on x64 and ARM64 Windows jobs. Tagging `v*` publishes portable ZIPs and checksums only after both jobs succeed. Publishing is repeatable: existing releases receive refreshed assets. To rebuild an existing release, run **Windows builds → Run workflow** with its existing `release_tag` (for example `v0.2.0`); the workflow builds that tag, verifies both package checksums, and retains the release metadata. Successful hosted builds do not establish interactive desktop behavior on your hardware.
 
 See [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md), [design notes](docs/DESIGN.md), and [release notes](docs/RELEASE_NOTES.md).
 

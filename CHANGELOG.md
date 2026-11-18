@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+- Consent-gated GitHub release downloads with native x64/ARM64 asset selection and preview support.
+- Background startup/daily checks, a manual tray action, and a persistent automatic-check preference.
+- Native version/release-note confirmation before asset requests; declined versions stay quiet until a manual retry or newer version.
+- Exact byte-length and GitHub SHA-256 verification, unique partial files, cleanup on failure and non-overwriting ZIP publication.
+- Download completion reveals Downloads/CosmicTile Updates; installation remains manual, with no executable replacement or launch.
+- English, French and Portuguese update UI.
+
 ## 0.1.1
 
 ### Branding

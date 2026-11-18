@@ -76,7 +76,12 @@ unsafe fn show_menu(manager: &mut Manager) {
         return;
     }
     let language = manager.language;
-    append(menu, 0, "CosmicTile · v0.1.1", false);
+    append(
+        menu,
+        0,
+        concat!("CosmicTile · v", env!("CARGO_PKG_VERSION")),
+        false,
+    );
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     for (index, monitor) in manager.monitors.iter().enumerate() {
         append(
@@ -163,6 +168,14 @@ unsafe fn show_menu(manager: &mut Manager) {
     );
     append(menu, 10, language.text("Keyboard shortcuts"), false);
     append(menu, 11, language.text("About"), false);
+    append(menu, 13, language.text("Check for updates"), false);
+    append(menu, 15, language.text("Release notes on GitHub"), false);
+    append(
+        menu,
+        14,
+        language.text("Automatically check for updates"),
+        manager.auto_updates,
+    );
     if manager.conflicts > 0 {
         append(
             menu,
@@ -259,7 +272,23 @@ unsafe fn command(manager: &mut Manager, id: i32) {
         }
         10 => help(manager),
         11 => {
-            MessageBoxW(manager.hwnd, wide(&format!("CosmicTile v0.1.1\n{}\nhttps://github.com/hckmseduardo/WindowsCosmicTile", manager.language.text("Native Rust + Win32 preview. Starts with tiling off. Save/Open dialogs stay floating."))).as_ptr(), wide("WindowsCosmicTile").as_ptr(), MB_OK);
+            MessageBoxW(manager.hwnd, wide(&format!("CosmicTile v{}\n{}\nhttps://github.com/hckmseduardo/WindowsCosmicTile", env!("CARGO_PKG_VERSION"), manager.language.text("Native Rust + Win32 preview. Starts with tiling off. Save/Open dialogs stay floating."))).as_ptr(), wide("WindowsCosmicTile").as_ptr(), MB_OK);
+        }
+        13 => {
+            start_update_check(manager, true);
+        }
+        14 => {
+            manager.auto_updates = !manager.auto_updates;
+        }
+        15 => {
+            ShellExecuteW(
+                manager.hwnd,
+                wide("open").as_ptr(),
+                wide("https://github.com/hckmseduardo/WindowsCosmicTile/releases").as_ptr(),
+                null(),
+                null(),
+                SW_SHOWNORMAL,
+            );
         }
         12 => {
             PostMessageW(manager.hwnd, WM_CLOSE, 0, 0);
@@ -302,6 +331,74 @@ unsafe fn command(manager: &mut Manager, id: i32) {
     manager.save_settings();
     tray(manager, NIM_MODIFY);
 }
+fn start_update_check(manager: &mut Manager, manual: bool) {
+    if manager.updater.check(manual) {
+        manager.last_update_check = cosmitile::updates::now();
+        manager.save_settings();
+    } else if manual {
+        unsafe {
+            update_message(
+                manager,
+                "An update operation is already in progress.",
+                MB_ICONINFORMATION,
+            );
+        }
+    }
+}
+unsafe fn update_message(manager: &mut Manager, key: &'static str, icon: u32) {
+    manager.set_resize(false);
+    MessageBoxW(
+        manager.hwnd,
+        wide(manager.language.text(key)).as_ptr(),
+        wide("CosmicTile Updates").as_ptr(),
+        MB_OK | icon,
+    );
+}
+unsafe fn downloads_folder() -> Option<std::path::PathBuf> {
+    let mut path = null_mut();
+    if SHGetKnownFolderPath(&FOLDERID_Downloads, 0, null_mut(), &mut path) < 0 || path.is_null() {
+        return None;
+    }
+    let mut len = 0;
+    while *path.add(len) != 0 {
+        len += 1;
+    }
+    let folder = std::path::PathBuf::from(String::from_utf16_lossy(std::slice::from_raw_parts(
+        path, len,
+    )))
+    .join("CosmicTile Updates");
+    windows_sys::Win32::System::Com::CoTaskMemFree(path.cast());
+    Some(folder)
+}
+unsafe fn poll_updates(manager: &mut Manager) {
+    use cosmitile::updates::Event;
+    while let Some(event) = manager.updater.poll() {
+        match event {
+            Event::Checked { manual, result: Ok(Some(release)) } => {
+                if !manual && (!manager.auto_updates || manager.declined_update == release.version.to_string()) {
+                    manager.updater.consent(false, std::path::PathBuf::new()); continue;
+                }
+                let Some(folder) = downloads_folder() else {
+                    manager.updater.consent(false, std::path::PathBuf::new());
+                    if manual { update_message(manager, "The Downloads folder is unavailable.", MB_ICONERROR); } continue;
+                };
+                let text = format!("CosmicTile v{}\n\n{}\n\n{}\n\n{}", release.version, cosmitile::updates::note_summary(&release.notes), manager.language.text("Download this update? Installation is manual; no executable will be replaced or run."), folder.display());
+                manager.set_resize(false);
+                let approved = MessageBoxW(manager.hwnd, wide(&text).as_ptr(), wide(manager.language.text("Update available")).as_ptr(), MB_YESNO | MB_DEFBUTTON2 | MB_ICONQUESTION) == IDYES;
+                if !approved { manager.declined_update = release.version.to_string(); manager.save_settings(); }
+                manager.updater.consent(approved, folder);
+            }
+            Event::Checked { manual: true, result: Ok(None) } => update_message(manager, "No newer compatible release is available.", MB_ICONINFORMATION),
+            Event::Checked { manual: true, result: Err(_) } => update_message(manager, "Could not check for updates. Please try again later.", MB_ICONERROR),
+            Event::Checked { .. } => (),
+            Event::Downloaded(Ok(path)) => {
+                update_message(manager, "Download verified. Extract the ZIP and install manually after quitting CosmicTile.", MB_ICONINFORMATION);
+                if let Some(folder) = path.parent() { ShellExecuteW(manager.hwnd, wide("open").as_ptr(), wide(&folder.to_string_lossy()).as_ptr(), null(), null(), SW_SHOWNORMAL); }
+            }
+            Event::Downloaded(Err(_)) => update_message(manager, "Download failed verification or could not be saved. No installation was performed. Please retry.", MB_ICONERROR),
+        }
+    }
+}
 unsafe extern "system" fn event_hook(
     _: HWINEVENTHOOK,
     _: u32,
@@ -324,6 +421,14 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, w: WPARAM, l: LPAR
                 let next = tick.get().wrapping_add(1);
                 tick.set(next);
                 with_state(|s| {
+                    poll_updates(s);
+                    if cosmitile::updates::due(
+                        s.auto_updates,
+                        s.last_update_check,
+                        cosmitile::updates::now(),
+                    ) {
+                        start_update_check(s, false);
+                    }
                     if next % 3 == 0 {
                         s.reconcile();
                     } else {

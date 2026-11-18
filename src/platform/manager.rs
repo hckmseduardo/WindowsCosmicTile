@@ -39,6 +39,10 @@ pub struct Manager {
     pub language: Language,
     pub conflicts: usize,
     pub failures: usize,
+    pub updater: cosmitile::updates::Updater,
+    pub auto_updates: bool,
+    pub last_update_check: u64,
+    pub declined_update: String,
 }
 impl Manager {
     pub unsafe fn new(hwnd: HWND) -> Self {
@@ -72,6 +76,10 @@ impl Manager {
             language: Language::English,
             conflicts: 0,
             failures: 0,
+            updater: cosmitile::updates::Updater::default(),
+            auto_updates: true,
+            last_update_check: 0,
+            declined_update: String::new(),
         };
         result.load_settings();
         result.conflicts = hotkeys::register(hwnd);
@@ -91,6 +99,9 @@ impl Manager {
         for line in content.lines() {
             if let Some((key, value)) = line.split_once('=') {
                 match key {
+                    "auto_updates" => self.auto_updates = value != "false",
+                    "last_update_check" => self.last_update_check = value.parse().unwrap_or(0),
+                    "declined_update" => self.declined_update = value.to_string(),
                     "language" => self.language = Language::from_code(value),
                     "gap" => self.gap = value.parse::<i32>().unwrap_or(10).clamp(0, 40),
                     "hint" => self.hint_enabled = value != "false",
@@ -114,11 +125,12 @@ impl Manager {
             let _ = fs::write(
                 path,
                 format!(
-                    "language={}\ngap={}\nhint={}\ncolor={}\n",
+                    "language={}\ngap={}\nhint={}\ncolor={}\nauto_updates={}\nlast_update_check={}\ndeclined_update={}\n",
                     self.language.code(),
                     self.gap,
                     self.hint_enabled,
-                    self.hint.color
+                    self.hint.color,
+                    self.auto_updates, self.last_update_check, self.declined_update
                 ),
             );
         }

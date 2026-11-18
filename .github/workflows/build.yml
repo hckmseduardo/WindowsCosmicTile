@@ -71,6 +71,8 @@ jobs:
           if ($machine -ne $expected) { throw "Unexpected PE architecture: $machine" }
           Copy-Item $exe "$stage\WindowsCosmicTile.exe"
           Copy-Item README.md, CHANGELOG.md, docs\QUICKSTART.md $stage
+          New-Item -ItemType Directory -Force "$stage\docs" | Out-Null
+          Copy-Item docs\QUICKSTART.md, docs\UPDATES.md, docs\RELEASE_NOTES.md "$stage\docs"
           New-Item -ItemType Directory -Force "$stage\assets\brand" | Out-Null
           Copy-Item assets\brand\app-icon.png, assets\brand\BRAND.md "$stage\assets\brand"
           Compress-Archive -Path "$stage\*" -DestinationPath "dist\$name.zip"

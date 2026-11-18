@@ -1,15 +1,15 @@
 <div align="center">
 
-# ▦ WindowsCosmiTile
+# ▦ WindowsCosmicTile
 
 **Every display, your own flow.**
 
 A native **Rust + Win32** tiling window manager inspired by COSMIC.<br>
 Independent monitors · Visible focus · Keyboard resizing · No web runtime
 
-[![Windows builds](https://github.com/hckmseduardo/WindowsCosmiTile/actions/workflows/build.yml/badge.svg)](https://github.com/hckmseduardo/WindowsCosmiTile/actions/workflows/build.yml)
+[![Windows builds](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml/badge.svg)](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml)
 
-[Download preview](https://github.com/hckmseduardo/WindowsCosmiTile/releases/tag/v0.1.0) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmiTile/issues/new?template=bug_report.md)
+[Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.1.0) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
 
 </div>
 
@@ -19,8 +19,8 @@ Independent monitors · Visible focus · Keyboard resizing · No web runtime
 
 | Your computer | Native package |
 | --- | --- |
-| Intel / AMD 64-bit Windows | [Windows x64 ZIP](https://github.com/hckmseduardo/WindowsCosmiTile/releases/download/v0.1.0/WindowsCosmiTile-v0.1.0-windows-x64.zip) |
-| Windows on ARM, including Snapdragon | [Windows ARM64 ZIP](https://github.com/hckmseduardo/WindowsCosmiTile/releases/download/v0.1.0/WindowsCosmiTile-v0.1.0-windows-arm64.zip) |
+| Intel / AMD 64-bit Windows | [Windows x64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.1.0/WindowsCosmicTile-v0.1.0-windows-x64.zip) |
+| Windows on ARM, including Snapdragon | [Windows ARM64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.1.0/WindowsCosmicTile-v0.1.0-windows-arm64.zip) |
 
 The ARM64 file is built for `aarch64-pc-windows-msvc`; it is not a renamed x64 executable. Both are 64-bit builds. The app targets current Windows 10/11 desktop systems; Windows 11 is recommended, particularly on ARM. Windows 10 application compatibility has not been interactively validated.
 
@@ -52,8 +52,8 @@ flowchart LR
 ## Install and first use
 
 1. Download and extract the ZIP matching your CPU architecture.
-2. Launch **WindowsCosmiTile.exe**. No installer or administrator permission is required for ordinary apps.
-3. Find **WindowsCosmiTile** in the notification area; Windows may place it under the hidden-icons arrow.
+2. Launch **WindowsCosmicTile.exe**. No installer or administrator permission is required for ordinary apps.
+3. Find **WindowsCosmicTile** in the notification area; Windows may place it under the hidden-icons arrow.
 4. Open its tray menu and enable the displays you want to tile. Startup defaults to **all displays off**.
 5. Press **Ctrl + Alt + T** to toggle the monitor containing the focused window.
 
@@ -64,7 +64,7 @@ The executable is **not Authenticode signed**. SmartScreen can warn about an unk
 Every release ZIP has a matching `.sha256` file:
 
 ```powershell
-Get-FileHash .\WindowsCosmiTile-v0.1.0-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\WindowsCosmicTile-v0.1.0-windows-x64.zip -Algorithm SHA256
 ```
 
 Compare the hash with the text in the corresponding checksum file.
@@ -102,7 +102,7 @@ Use the tray menu to change **Gap**, **Hint color**, or **Active window hint**. 
 Gap, hint state/color and language are stored in:
 
 ```text
-%APPDATA%\WindowsCosmiTile\settings.conf
+%APPDATA%\WindowsCosmicTile\settings.conf
 ```
 
 Layout trees, active-display switches and floating-window state are session-only. The app does not install a startup entry or send window metadata over the network.
@@ -133,11 +133,11 @@ Shortcut registration conflicts are shown in the tray menu. On some keyboard lay
 Install a current stable Rust **MSVC** toolchain and Visual Studio Build Tools with the C++ workload and Windows SDK.
 
 ```powershell
-git clone https://github.com/hckmseduardo/WindowsCosmiTile.git
-cd WindowsCosmiTile
+git clone https://github.com/hckmseduardo/WindowsCosmicTile.git
+cd WindowsCosmicTile
 cargo test --locked
 cargo build --locked --release
-.\target\release\WindowsCosmiTile.exe
+.\target\release\WindowsCosmicTile.exe
 ```
 
 Explicit architecture builds:

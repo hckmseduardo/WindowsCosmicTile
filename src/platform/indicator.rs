@@ -26,7 +26,7 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, w: WPARAM, l: LPAR
 }
 impl Indicator {
     pub unsafe fn new() -> Self {
-        let class = wide("WindowsCosmiTile.ActiveHint");
+        let class = wide("WindowsCosmicTile.ActiveHint");
         let instance = GetModuleHandleW(null());
         let color = 0x00E7DC46;
         let brush = CreateSolidBrush(color);
@@ -116,7 +116,7 @@ impl Indicator {
     pub unsafe fn destroy(&mut self) {
         DestroyWindow(self.hwnd);
         UnregisterClassW(
-            wide("WindowsCosmiTile.ActiveHint").as_ptr(),
+            wide("WindowsCosmicTile.ActiveHint").as_ptr(),
             GetModuleHandleW(null()),
         );
         DeleteObject(self.brush);

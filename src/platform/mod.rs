@@ -44,7 +44,7 @@ unsafe fn tray(manager: &Manager, operation: u32) {
     data.hIcon = LoadIconW(null_mut(), IDI_APPLICATION);
     let mode = if manager.resize { " · RESIZE" } else { "" };
     let text = wide(&format!(
-        "WindowsCosmiTile · {}/{} {}{}",
+        "WindowsCosmicTile · {}/{} {}{}",
         manager.policy.active.len(),
         manager.monitors.len(),
         manager.language.text("Display"),
@@ -76,7 +76,7 @@ unsafe fn show_menu(manager: &mut Manager) {
         return;
     }
     let language = manager.language;
-    append(menu, 0, "WindowsCosmiTile · v0.1.0", false);
+    append(menu, 0, "WindowsCosmicTile · v0.1.0", false);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     for (index, monitor) in manager.monitors.iter().enumerate() {
         append(
@@ -259,7 +259,7 @@ unsafe fn command(manager: &mut Manager, id: i32) {
         }
         10 => help(manager),
         11 => {
-            MessageBoxW(manager.hwnd, wide(&format!("WindowsCosmiTile v0.1.0\n{}\nhttps://github.com/hckmseduardo/WindowsCosmiTile", manager.language.text("Native Rust + Win32 preview. Starts with tiling off. Save/Open dialogs stay floating."))).as_ptr(), wide("WindowsCosmiTile").as_ptr(), MB_OK);
+            MessageBoxW(manager.hwnd, wide(&format!("WindowsCosmicTile v0.1.0\n{}\nhttps://github.com/hckmseduardo/WindowsCosmicTile", manager.language.text("Native Rust + Win32 preview. Starts with tiling off. Save/Open dialogs stay floating."))).as_ptr(), wide("WindowsCosmicTile").as_ptr(), MB_OK);
         }
         12 => {
             PostMessageW(manager.hwnd, WM_CLOSE, 0, 0);
@@ -381,7 +381,7 @@ pub fn run() {
         let mutex = CreateMutexW(
             null(),
             0,
-            wide("Local\\WindowsCosmiTile.SingleInstance").as_ptr(),
+            wide("Local\\WindowsCosmicTile.SingleInstance").as_ptr(),
         );
         if mutex.is_null() || GetLastError() == ERROR_ALREADY_EXISTS {
             if !mutex.is_null() {
@@ -391,7 +391,7 @@ pub fn run() {
         }
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let instance = GetModuleHandleW(null());
-        let class = wide("WindowsCosmiTile.Controller");
+        let class = wide("WindowsCosmicTile.Controller");
         let definition = WNDCLASSW {
             lpfnWndProc: Some(procedure),
             hInstance: instance,
@@ -402,7 +402,7 @@ pub fn run() {
         let hwnd = CreateWindowExW(
             0,
             class.as_ptr(),
-            wide("WindowsCosmiTile").as_ptr(),
+            wide("WindowsCosmicTile").as_ptr(),
             0,
             0,
             0,

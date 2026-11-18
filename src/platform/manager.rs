@@ -58,7 +58,7 @@ impl Manager {
     fn settings_path() -> Option<PathBuf> {
         std::env::var_os("APPDATA").map(|root| {
             PathBuf::from(root)
-                .join("WindowsCosmiTile")
+                .join("WindowsCosmicTile")
                 .join("settings.conf")
         })
     }

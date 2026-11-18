@@ -1,4 +1,4 @@
-# WindowsCosmiTile v0.1
+# WindowsCosmicTile v0.1
 
 Approved direction: native Rust + Win32, no web runtime. Windows 10/11 x86-64 and ARM64 builds. The app starts with tiling off and lives in the notification area.
 

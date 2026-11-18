@@ -5,6 +5,9 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -44,22 +47,22 @@ jobs:
       - name: Smoke-run native executable
         shell: pwsh
         run: |
-          $process = Start-Process 'target\${{ matrix.target }}\release\WindowsCosmiTile.exe' -ArgumentList '--version' -Wait -PassThru
+          $process = Start-Process 'target\${{ matrix.target }}\release\WindowsCosmicTile.exe' -ArgumentList '--version' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Native executable failed: $($process.ExitCode)" }
       - name: Package executable and documentation
         shell: pwsh
         run: |
           $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
-          $name = "WindowsCosmiTile-v$version-windows-${{ matrix.arch }}"
+          $name = "WindowsCosmicTile-v$version-windows-${{ matrix.arch }}"
           $stage = "package\$name"
           New-Item -ItemType Directory -Force $stage, dist | Out-Null
-          $exe = 'target\${{ matrix.target }}\release\WindowsCosmiTile.exe'
+          $exe = 'target\${{ matrix.target }}\release\WindowsCosmicTile.exe'
           $bytes = [IO.File]::ReadAllBytes($exe)
           $pe = [BitConverter]::ToInt32($bytes, 0x3c)
           $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
           $expected = if ('${{ matrix.arch }}' -eq 'arm64') { 0xaa64 } else { 0x8664 }
           if ($machine -ne $expected) { throw "Unexpected PE architecture: $machine" }
-          Copy-Item $exe "$stage\WindowsCosmiTile.exe"
+          Copy-Item $exe "$stage\WindowsCosmicTile.exe"
           Copy-Item README.md, CHANGELOG.md, docs\QUICKSTART.md $stage
           Compress-Archive -Path "$stage\*" -DestinationPath "dist\$name.zip"
           $hash = (Get-FileHash "dist\$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -86,5 +89,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh release create "$GITHUB_REF_NAME" release/*.zip release/*.sha256
-          --repo "$GITHUB_REPOSITORY" --title "WindowsCosmiTile $GITHUB_REF_NAME"
+          --repo "$GITHUB_REPOSITORY" --title "WindowsCosmicTile $GITHUB_REF_NAME"
           --notes-file docs/RELEASE_NOTES.md --prerelease

@@ -11,7 +11,7 @@ Independent monitors · Visible focus · Keyboard resizing · No web runtime
 
 [![Windows builds](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml/badge.svg)](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml)
 
-[Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.2.0) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
+[Official website](https://cosmictile.app.amazing-ai.tools) · [Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.2.0) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
 
 </div>
 

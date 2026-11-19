@@ -201,3 +201,7 @@ See [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md), [design no
 ## Shared identity
 
 CosmicTile uses the same application artwork on macOS and Windows. The macOS menu bar uses an OS-tinted template rendition; Windows embeds the color icon in the executable and notification-area icon. See the [brand guide](assets/brand/BRAND.md) and [identity board](assets/brand/brand-board.png).
+
+## Keep awake
+
+Toggle **Keep awake** in the menu to keep the display and computer awake while CosmicTile is running. It starts off each launch. Disable it or quit to release the native power request. Manual locking remains available. Screen-saver locks and organization-enforced inactivity locks may still apply; this option does not change security or power settings permanently.

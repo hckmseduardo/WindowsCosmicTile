@@ -2,6 +2,7 @@
 mod desktop;
 mod hotkeys;
 mod indicator;
+mod keep_awake;
 mod manager;
 
 use cosmitile::{core::Axis, i18n::Language};
@@ -168,6 +169,12 @@ unsafe fn show_menu(manager: &mut Manager) {
     );
     append(menu, 10, language.text("Keyboard shortcuts"), false);
     append(menu, 11, language.text("About"), false);
+    append(
+        menu,
+        16,
+        language.text("Keep awake"),
+        manager.keep_awake.enabled(),
+    );
     append(menu, 13, language.text("Check for updates"), false);
     append(menu, 15, language.text("Release notes on GitHub"), false);
     append(
@@ -273,6 +280,16 @@ unsafe fn command(manager: &mut Manager, id: i32) {
         10 => help(manager),
         11 => {
             MessageBoxW(manager.hwnd, wide(&format!("CosmicTile v{}\n{}\nhttps://github.com/hckmseduardo/WindowsCosmicTile", env!("CARGO_PKG_VERSION"), manager.language.text("Native Rust + Win32 preview. Starts with tiling off. Save/Open dialogs stay floating."))).as_ptr(), wide("WindowsCosmicTile").as_ptr(), MB_OK);
+        }
+        16 => {
+            if manager.keep_awake.toggle().is_err() {
+                MessageBoxW(
+                    manager.hwnd,
+                    wide(manager.language.text("Could not change keep awake state.")).as_ptr(),
+                    wide("CosmicTile").as_ptr(),
+                    MB_OK | MB_ICONERROR,
+                );
+            }
         }
         13 => {
             start_update_check(manager, true);
@@ -458,12 +475,18 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, w: WPARAM, l: LPAR
         WM_QUERYENDSESSION => 1,
         WM_ENDSESSION => {
             if w != 0 {
-                with_state(|s| s.restore_all());
+                with_state(|s| {
+                    s.keep_awake.disable();
+                    s.restore_all();
+                });
             }
             0
         }
         WM_CLOSE => {
-            with_state(|s| s.restore_all());
+            with_state(|s| {
+                s.keep_awake.disable();
+                s.restore_all();
+            });
             DestroyWindow(hwnd);
             0
         }

@@ -20,6 +20,7 @@ struct PendingPosition {
     pid: u32,
 }
 pub struct Manager {
+    pub keep_awake: super::keep_awake::KeepAwake,
     pub hwnd: HWND,
     pub brand_icon: HICON,
     pub monitors: Vec<Monitor>,
@@ -57,6 +58,7 @@ impl Manager {
             LR_SHARED,
         ) as HICON;
         let mut result = Self {
+            keep_awake: super::keep_awake::KeepAwake::default(),
             hwnd,
             brand_icon,
             monitors: monitors(),

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+- Extend directional window focus across displays, including displays with tiling turned off.
+- Recognize more resizable windows with custom frames and retry placement once when the requested size is not applied.
+- Link to the official CosmicTile website from the tray menu and README.
+
 ## 0.2.1 — 2026-11-18
 
 - Add a session-only Keep awake menu toggle backed by native power management, with release on disable or exit.

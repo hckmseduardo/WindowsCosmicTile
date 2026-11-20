@@ -169,6 +169,7 @@ unsafe fn show_menu(manager: &mut Manager) {
     );
     append(menu, 10, language.text("Keyboard shortcuts"), false);
     append(menu, 11, language.text("About"), false);
+    append(menu, 17, language.text("Official website"), false);
     append(
         menu,
         16,
@@ -261,6 +262,16 @@ unsafe fn help(manager: &Manager) {
         MB_OK | MB_ICONINFORMATION,
     );
 }
+unsafe fn open_web_page(owner: HWND, url: &str) {
+    ShellExecuteW(
+        owner,
+        wide("open").as_ptr(),
+        wide(url).as_ptr(),
+        null(),
+        null(),
+        SW_SHOWNORMAL,
+    );
+}
 unsafe fn command(manager: &mut Manager, id: i32) {
     match id {
         1 | 2 => {
@@ -298,25 +309,22 @@ unsafe fn command(manager: &mut Manager, id: i32) {
             manager.auto_updates = !manager.auto_updates;
         }
         15 => {
-            ShellExecuteW(
+            open_web_page(
                 manager.hwnd,
-                wide("open").as_ptr(),
-                wide("https://github.com/hckmseduardo/WindowsCosmicTile/releases").as_ptr(),
-                null(),
-                null(),
-                SW_SHOWNORMAL,
+                "https://github.com/hckmseduardo/WindowsCosmicTile/releases",
             );
         }
+        17 => open_web_page(manager.hwnd, "https://cosmictile.app.amazing-ai.tools"),
         12 => {
             PostMessageW(manager.hwnd, WM_CLOSE, 0, 0);
         }
         20..=23 => {
             let (_, x, y) = hotkeys::DIRECTIONS[(id - 20) as usize];
-            manager.direction(x, y, false);
+            manager.focus_direction(x, y);
         }
         30..=33 => {
             let (_, x, y) = hotkeys::DIRECTIONS[(id - 30) as usize];
-            manager.direction(x, y, true);
+            manager.swap_direction(x, y);
         }
         50 => manager.resize_axis(Axis::Horizontal, 0.04),
         51 => manager.resize_axis(Axis::Horizontal, -0.04),
@@ -331,7 +339,12 @@ unsafe fn command(manager: &mut Manager, id: i32) {
         }
         80..=83 if manager.resize => {
             let (_, x, y) = hotkeys::DIRECTIONS[(id - 80) as usize];
-            manager.direction(x, y, false);
+            let (axis, direction) = if x == 0 {
+                (Axis::Vertical, y)
+            } else {
+                (Axis::Horizontal, x)
+            };
+            manager.resize_axis(axis, f64::from(direction) * 0.04);
         }
         84 | 85 => manager.set_resize(false),
         90..=92 => {

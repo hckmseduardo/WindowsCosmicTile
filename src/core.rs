@@ -53,6 +53,13 @@ impl Rect {
             Axis::Vertical
         }
     }
+    pub fn matches_placement(self, actual: Self) -> bool {
+        // DPI and DWM border conversions can round either edge by a pixel.
+        self.x.abs_diff(actual.x) <= 1
+            && self.y.abs_diff(actual.y) <= 1
+            && self.right().abs_diff(actual.right()) <= 1
+            && self.bottom().abs_diff(actual.bottom()) <= 1
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -287,23 +294,40 @@ pub fn choose_target(
         .map(|(id, _)| *id)
 }
 pub fn neighbor(frames: &BTreeMap<isize, Rect>, current: isize, dx: i32, dy: i32) -> Option<isize> {
-    let origin = frames.get(&current)?;
-    frames
-        .iter()
-        .filter(|(id, _)| **id != current)
+    neighbor_from(
+        *frames.get(&current)?,
+        frames
+            .iter()
+            .filter(|(id, _)| **id != current)
+            .map(|(id, frame)| (*id, *frame)),
+        dx,
+        dy,
+    )
+}
+
+pub fn neighbor_from(
+    origin: Rect,
+    candidates: impl IntoIterator<Item = (isize, Rect)>,
+    dx: i32,
+    dy: i32,
+) -> Option<isize> {
+    candidates
+        .into_iter()
         .filter_map(|(id, r)| {
-            let x = i64::from(r.x - origin.x) * 2 + i64::from(r.w - origin.w);
-            let y = i64::from(r.y - origin.y) * 2 + i64::from(r.h - origin.h);
+            let x =
+                (i64::from(r.x) - i64::from(origin.x)) * 2 + i64::from(r.w) - i64::from(origin.w);
+            let y =
+                (i64::from(r.y) - i64::from(origin.y)) * 2 + i64::from(r.h) - i64::from(origin.h);
             let forward = x * i64::from(dx) + y * i64::from(dy);
             if forward <= 0 {
                 return None;
             }
             Some((
-                *id,
+                id,
                 forward + 3 * (x * i64::from(dy) - y * i64::from(dx)).abs(),
             ))
         })
-        .min_by_key(|(_, score)| *score)
+        .min_by_key(|(id, score)| (*score, *id))
         .map(|(id, _)| id)
 }
 

@@ -8,6 +8,8 @@
 6. Choose Language → English / Français / Português from the tray menu. English is the default.
 7. Quit through the tray menu to restore managed windows.
 
+Use Ctrl + Alt + an arrow key to focus windows in that direction across displays, including displays with tiling turned off.
+
 Save/Open dialogs, owned modal windows, tool windows, fixed-size windows and minimized/cloaked windows are excluded. Standard application windows remain tiled. App-specific minimum sizes can still prevent a requested layout.
 
 No administrator permission is required for ordinary apps. Windows privilege restrictions may prevent managing elevated windows. This preview is not Authenticode signed, so SmartScreen can warn. Review the source, release provenance and SHA-256 before deciding whether to run it.

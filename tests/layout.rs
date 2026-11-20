@@ -111,6 +111,27 @@ fn direction_chooses_neighbor_in_requested_half_plane() {
     assert_eq!(neighbor(&frames, 1, -1, 0), None);
 }
 #[test]
+fn focus_reaches_windows_on_other_displays_from_an_unmanaged_window() {
+    use cosmitile::core::neighbor_from;
+
+    let origin = Rect::new(-800, 0, 800, 600);
+    let windows = [
+        (1, Rect::new(-1600, 0, 800, 600)),
+        (2, Rect::new(40, 30, 800, 600)),
+        (3, Rect::new(-800, -650, 800, 600)),
+    ];
+    assert_eq!(neighbor_from(origin, windows, 1, 0), Some(2));
+    assert_eq!(neighbor_from(origin, windows, -1, 0), Some(1));
+    assert_eq!(neighbor_from(origin, windows, 0, -1), Some(3));
+}
+
+#[test]
+fn placement_observation_tolerates_rounding_but_detects_an_ignored_resize() {
+    let requested = Rect::new(-1000, 10, 500, 800);
+    assert!(requested.matches_placement(Rect::new(-999, 9, 499, 801)));
+    assert!(!requested.matches_placement(Rect::new(-1000, 10, 700, 800)));
+}
+#[test]
 fn transfer_waits_for_destination_instead_of_reinserting_on_source() {
     use cosmitile::core::Transfers;
     use std::time::{Duration, Instant};

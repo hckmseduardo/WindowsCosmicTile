@@ -320,11 +320,11 @@ unsafe fn command(manager: &mut Manager, id: i32) {
         }
         20..=23 => {
             let (_, x, y) = hotkeys::DIRECTIONS[(id - 20) as usize];
-            manager.direction(x, y, false);
+            manager.focus_direction(x, y);
         }
         30..=33 => {
             let (_, x, y) = hotkeys::DIRECTIONS[(id - 30) as usize];
-            manager.direction(x, y, true);
+            manager.swap_direction(x, y);
         }
         50 => manager.resize_axis(Axis::Horizontal, 0.04),
         51 => manager.resize_axis(Axis::Horizontal, -0.04),
@@ -339,7 +339,12 @@ unsafe fn command(manager: &mut Manager, id: i32) {
         }
         80..=83 if manager.resize => {
             let (_, x, y) = hotkeys::DIRECTIONS[(id - 80) as usize];
-            manager.direction(x, y, false);
+            let (axis, direction) = if x == 0 {
+                (Axis::Vertical, y)
+            } else {
+                (Axis::Horizontal, x)
+            };
+            manager.resize_axis(axis, f64::from(direction) * 0.04);
         }
         84 | 85 => manager.set_resize(false),
         90..=92 => {

@@ -103,6 +103,26 @@ pub unsafe fn pid(hwnd: HWND) -> u32 {
     GetWindowThreadProcessId(hwnd, &mut pid);
     pid
 }
+fn window_styles_eligible(style: u32, extended: u32, class_name: &str) -> bool {
+    // Some windows draw their own resize borders but still support maximizing.
+    let maximizable = style & (WS_SYSMENU | WS_MAXIMIZEBOX) == (WS_SYSMENU | WS_MAXIMIZEBOX);
+    cosmitile::core::window_eligible(
+        style & WS_CHILD != 0,
+        style & WS_THICKFRAME != 0 || maximizable,
+        extended & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_DLGMODALFRAME) != 0,
+        class_name,
+    )
+}
+pub unsafe fn is_cloaked(hwnd: HWND) -> bool {
+    let mut cloaked: u32 = 0;
+    DwmGetWindowAttribute(
+        hwnd,
+        DWMWA_CLOAKED as u32,
+        &mut cloaked as *mut _ as _,
+        size_of::<u32>() as u32,
+    );
+    cloaked != 0
+}
 pub unsafe fn windows() -> Vec<Window> {
     unsafe extern "system" fn callback(hwnd: HWND, data: LPARAM) -> BOOL {
         let result = &mut *(data as *mut Vec<Window>);
@@ -118,22 +138,7 @@ pub unsafe fn windows() -> Vec<Window> {
         let mut name = [0u16; 128];
         let len = GetClassNameW(hwnd, name.as_mut_ptr(), name.len() as i32).max(0) as usize;
         let class = String::from_utf16_lossy(&name[..len]);
-        if !cosmitile::core::window_eligible(
-            style & WS_CHILD != 0,
-            style & WS_THICKFRAME != 0,
-            extended & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_DLGMODALFRAME) != 0,
-            &class,
-        ) {
-            return 1;
-        }
-        let mut cloaked: u32 = 0;
-        DwmGetWindowAttribute(
-            hwnd,
-            DWMWA_CLOAKED as u32,
-            &mut cloaked as *mut _ as _,
-            size_of::<u32>() as u32,
-        );
-        if cloaked != 0 {
+        if !window_styles_eligible(style, extended, &class) || is_cloaked(hwnd) {
             return 1;
         }
         if let Some(frame) = visible_frame(hwnd) {
@@ -266,6 +271,18 @@ pub unsafe fn focus(id: isize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn custom_chrome_with_a_maximize_button_is_eligible_for_tiling() {
+        let custom_chrome = WS_POPUP | WS_SYSMENU | WS_MAXIMIZEBOX;
+        assert!(window_styles_eligible(custom_chrome, 0, "CustomChrome"));
+        assert!(!window_styles_eligible(WS_POPUP, 0, "FixedPopup"));
+        assert!(!window_styles_eligible(custom_chrome, 0, "#32770"));
+        assert!(!window_styles_eligible(
+            custom_chrome,
+            WS_EX_TOOLWINDOW,
+            "CustomChrome"
+        ));
+    }
     #[test]
     fn minimized_restore_preserves_saved_normal_position() {
         let mut original: WINDOWPLACEMENT = unsafe { zeroed() };

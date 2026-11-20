@@ -124,8 +124,8 @@ Downloads go to your Windows **Downloads/CosmicTile Updates** folder. The app ve
 | `Ctrl + Alt + T / Y` | Toggle focused display |
 | `Ctrl + Alt + Shift + T` | Toggle all displays |
 | `Ctrl + Alt + F / G` | Toggle focused window floating |
-| `Ctrl + Alt + arrows` | Focus a window in that direction |
-| `Ctrl + Alt + Shift + arrows` | Swap with a window in that direction |
+| `Ctrl + Alt + arrows` | Focus a window in that direction, including across displays with tiling off |
+| `Ctrl + Alt + Shift + arrows` | Swap with a tiled window in that direction on the same display |
 | `Ctrl + Alt + R` | Enter/exit resize mode |
 | `Left / Right` in resize mode | Reduce/increase width |
 | `Up / Down` in resize mode | Reduce/increase height |
@@ -174,7 +174,7 @@ The portable engine can also be tested on macOS/Linux with `cargo test`; the app
 | `src/platform/hotkeys.rs` | Permanent and temporary global hotkeys |
 | `src/platform/mod.rs` | Win32 message loop, tray menu and focus-event hook |
 
-The process is per-monitor DPI aware. Geometry comes from `MONITORINFO.rcWork`, and DWM visible bounds compensate for invisible resize borders. A foreground-event hook refreshes state, with roughly 360 ms reconciliation and 120 ms hint polling as fallback. Cross-process positioning is asynchronous, maximized windows are restored before border measurements, and queued transfers have bounded retry state. Stable layouts are not rewritten on every tick. Mouse dragging pauses reconciliation.
+The process is per-monitor DPI aware. Geometry comes from `MONITORINFO.rcWork`, and DWM visible bounds compensate for invisible resize borders. A foreground-event hook refreshes state, with roughly 360 ms reconciliation and 120 ms hint polling as fallback. Cross-process positioning is asynchronous. CosmicTile restores maximized windows before measuring borders and checks the resulting bounds before making one corrective placement request. Mouse dragging pauses reconciliation.
 
 ## Troubleshooting and limitations
 
@@ -192,7 +192,7 @@ No tabbed stacks, drag previews, per-virtual-desktop layout persistence, arbitra
 
 ## Validation and releases
 
-The suite includes 15 portable tests plus 3 Windows-specific restoration/resource tests. Tests cover negative-coordinate geometry, gaps, insertion of newly focused windows, removal, directional resizing, rotation, swaps, independent display activation, display removal, restoration bounds, dialog exclusions, placement, focus direction and language fallback. Both Windows targets are type-checked before publication.
+The suite covers negative-coordinate geometry, gaps, insertion of newly focused windows, removal, directional resizing, rotation, swaps, independent display activation, display removal, restoration bounds, dialog exclusions, placement, cross-display focus and language fallback. Windows-specific checks cover custom window styles, restoration and resources. Both Windows targets are type-checked before publication.
 
 The [build workflow](.github/workflows/build.yml) runs formatting, unit tests, native lint and release builds on x64 and ARM64 Windows jobs. Tagging `v*` publishes portable ZIPs and checksums only after both jobs succeed. Publishing is repeatable: existing releases receive refreshed assets. To rebuild an existing release, run **Windows builds → Run workflow** with its existing `release_tag` (for example `v0.2.0`); the workflow builds that tag, verifies both package checksums, and retains the release metadata. Successful hosted builds do not establish interactive desktop behavior on your hardware.
 

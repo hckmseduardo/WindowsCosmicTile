@@ -1,23 +1,31 @@
 use super::{desktop::*, hotkeys, indicator::Indicator};
 use cosmitile::{
-    core::{choose_target, neighbor, Axis, Layout, MonitorState, Transfers},
+    core::{choose_target, neighbor, neighbor_from, Axis, Layout, MonitorState, Rect, Transfers},
     i18n::Language,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::PathBuf,
+    time::{Duration, Instant},
 };
 use windows_sys::Win32::{
     Foundation::*,
-    UI::{Input::KeyboardAndMouse::GetAsyncKeyState, WindowsAndMessaging::*},
+    UI::{
+        Input::KeyboardAndMouse::{GetAsyncKeyState, IsWindowEnabled},
+        WindowsAndMessaging::*,
+    },
 };
 
-#[derive(Clone)]
+const POSITION_TIMEOUT: Duration = Duration::from_secs(2);
+const POSITION_SETTLE_TIME: Duration = Duration::from_millis(300);
+
 struct PendingPosition {
-    frame: cosmitile::core::Rect,
-    deadline: std::time::Instant,
+    frame: Rect,
+    deadline: Instant,
     pid: u32,
+    // None while waiting for a maximized window to restore.
+    check_after: Option<Instant>,
 }
 pub struct Manager {
     pub keep_awake: super::keep_awake::KeepAwake,
@@ -193,6 +201,11 @@ impl Manager {
             .filter(|(_, original)| original.monitor == key)
             .map(|(id, _)| *id)
             .collect();
+        if let Some(tree) = self.layouts.remove(key) {
+            for id in tree.ids() {
+                self.pending_positions.remove(&id);
+            }
+        }
         for id in ids {
             self.pending_positions.remove(&id);
             if let Some(original) = self.originals.remove(&id) {
@@ -202,7 +215,6 @@ impl Manager {
             }
             self.floating.remove(&id);
         }
-        self.layouts.remove(key);
     }
     pub unsafe fn restore_all(&mut self) {
         self.set_resize(false);
@@ -330,57 +342,91 @@ impl Manager {
         }
         self.refresh_hint();
     }
-    unsafe fn queue_position(&mut self, id: isize, frame: cosmitile::core::Rect) -> bool {
+    unsafe fn queue_position(&mut self, id: isize, frame: Rect) -> bool {
         let Some(window) = self.windows.get(&id) else {
             return false;
         };
         let process = window.pid;
+        let now = Instant::now();
         if let Some(pending) = self.pending_positions.get_mut(&id) {
-            pending.frame = frame;
-            return true;
-        }
-        match set_frame(id, frame) {
-            PositionStatus::Queued => true,
-            PositionStatus::Restoring => {
-                self.pending_positions.insert(
-                    id,
-                    PendingPosition {
-                        frame,
-                        deadline: std::time::Instant::now() + std::time::Duration::from_secs(2),
-                        pid: process,
-                    },
-                );
-                true
+            if pending.pid == process && now < pending.deadline {
+                if pending.check_after.is_none() {
+                    pending.frame = frame;
+                    return true;
+                }
+                if pending.frame == frame {
+                    return true;
+                }
             }
-            PositionStatus::Failed => false,
         }
+        let check_after = match set_frame(id, frame) {
+            PositionStatus::Queued => Some(now + POSITION_SETTLE_TIME),
+            PositionStatus::Restoring => None,
+            PositionStatus::Failed => {
+                self.pending_positions.remove(&id);
+                return false;
+            }
+        };
+        self.pending_positions.insert(
+            id,
+            PendingPosition {
+                frame,
+                deadline: now + POSITION_TIMEOUT,
+                pid: process,
+                check_after,
+            },
+        );
+        true
     }
     unsafe fn retry_positions(&mut self) {
-        let requests: Vec<_> = self
-            .pending_positions
-            .iter()
-            .map(|(id, request)| (*id, request.clone()))
-            .collect();
-        for (id, request) in requests {
-            if std::time::Instant::now() >= request.deadline || pid(id as HWND) != request.pid {
-                self.pending_positions.remove(&id);
-                self.failures += 1;
-                continue;
+        let now = Instant::now();
+        self.pending_positions.retain(|id, request| {
+            let hwnd = *id as HWND;
+            if pid(hwnd) != request.pid
+                || IsWindowVisible(hwnd) == 0
+                || IsIconic(hwnd) != 0
+                || is_cloaked(hwnd)
+            {
+                return false;
             }
-            if IsZoomed(id as HWND) != 0 {
-                continue;
-            }
-            match set_frame(id, request.frame) {
-                PositionStatus::Queued => {
-                    self.pending_positions.remove(&id);
-                }
-                PositionStatus::Failed => {
-                    self.pending_positions.remove(&id);
+            if now >= request.deadline {
+                if request.check_after.is_none() {
                     self.failures += 1;
                 }
-                PositionStatus::Restoring => (),
+                return false;
             }
-        }
+            if IsZoomed(hwnd) != 0 {
+                return true;
+            }
+            if let Some(check_after) = request.check_after {
+                if now < check_after {
+                    return true;
+                }
+                // The queued call can succeed before the window adopts its size.
+                // Recheck its borders without undoing a move to another display.
+                if visible_frame(hwnd).is_some_and(|actual| {
+                    !request.frame.matches_placement(actual)
+                        && monitor_for(&self.monitors, actual)
+                            == monitor_for(&self.monitors, request.frame)
+                }) && set_frame(*id, request.frame) == PositionStatus::Failed
+                {
+                    self.failures += 1;
+                }
+                return false;
+            }
+            match set_frame(*id, request.frame) {
+                PositionStatus::Queued => {
+                    request.check_after = Some(now + POSITION_SETTLE_TIME);
+                    request.deadline = now + POSITION_TIMEOUT;
+                    true
+                }
+                PositionStatus::Failed => {
+                    self.failures += 1;
+                    false
+                }
+                PositionStatus::Restoring => true,
+            }
+        });
     }
     pub unsafe fn apply(&mut self) {
         self.failures = 0;
@@ -447,18 +493,26 @@ impl Manager {
             }
         }
     }
-    pub unsafe fn direction(&mut self, dx: i32, dy: i32, swap: bool) {
-        if self.resize && !swap {
-            self.resize_axis(
-                if dx == 0 {
-                    Axis::Vertical
-                } else {
-                    Axis::Horizontal
-                },
-                f64::from(if dx == 0 { dy } else { dx }) * 0.04,
-            );
+    pub unsafe fn focus_direction(&self, dx: i32, dy: i32) {
+        let Some(id) = self.focused_id() else {
             return;
+        };
+        let Some(origin) = visible_frame(id as HWND) else {
+            return;
+        };
+        // Use live desktop geometry, including floating windows and displays
+        // where tiling is disabled. Focusing never changes a layout tree.
+        let candidates = windows().into_iter().filter_map(|window| {
+            (window.id != id
+                && IsWindowEnabled(window.id as HWND) != 0
+                && monitor_id(window.id as HWND).is_some())
+            .then_some((window.id, window.frame))
+        });
+        if let Some(other) = neighbor_from(origin, candidates, dx, dy) {
+            focus(other);
         }
+    }
+    pub unsafe fn swap_direction(&mut self, dx: i32, dy: i32) {
         let Some((id, key)) = self.current() else {
             return;
         };
@@ -471,12 +525,8 @@ impl Manager {
             .filter_map(|id| self.windows.get(&id).map(|window| (id, window.frame)))
             .collect();
         if let Some(other) = neighbor(&frames, id, dx, dy) {
-            if swap {
-                *tree = tree.swapped(id, other);
-                self.apply();
-            } else {
-                focus(other);
-            }
+            *tree = tree.swapped(id, other);
+            self.apply();
         }
     }
     pub unsafe fn resize_axis(&mut self, axis: Axis, delta: f64) {
@@ -506,6 +556,7 @@ impl Manager {
             if !self.layouts.get(&key).is_some_and(|tree| tree.contains(id)) {
                 return;
             }
+            self.pending_positions.remove(&id);
             self.floating.insert(id);
             if let Some(tree) = self.layouts.remove(&key).and_then(|tree| tree.remove(id)) {
                 self.layouts.insert(key, tree);

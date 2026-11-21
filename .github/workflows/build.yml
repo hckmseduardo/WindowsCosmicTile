@@ -56,6 +56,12 @@ jobs:
         run: |
           $process = Start-Process 'target\${{ matrix.target }}\release\WindowsCosmicTile.exe' -ArgumentList '--version' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Native executable failed: $($process.ExitCode)" }
+      - name: Smoke-test in-place restart and rollback
+        shell: pwsh
+        run: |
+          if (Test-Path './tests/update-handoff.ps1') {
+            ./tests/update-handoff.ps1 -Executable 'target\${{ matrix.target }}\release\WindowsCosmicTile.exe'
+          }
       - name: Package executable and documentation
         shell: pwsh
         run: |
@@ -76,8 +82,13 @@ jobs:
           New-Item -ItemType Directory -Force "$stage\assets\brand" | Out-Null
           Copy-Item assets\brand\app-icon.png, assets\brand\BRAND.md "$stage\assets\brand"
           Compress-Archive -Path "$stage\*" -DestinationPath "dist\$name.zip"
-          $hash = (Get-FileHash "dist\$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $name.zip" | Set-Content "dist\$name.sha256" -Encoding utf8NoBOM
+          Copy-Item $exe "dist\$name.exe"
+          foreach ($extension in @('zip', 'exe')) {
+            $file = "$name.$extension"
+            $checksum = if ($extension -eq 'zip') { "$name.sha256" } else { "$file.sha256" }
+            $hash = (Get-FileHash "dist\$file" -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $file" | Set-Content "dist\$checksum" -Encoding utf8NoBOM
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}
@@ -106,13 +117,15 @@ jobs:
           for arch in x64 arm64; do
             test -f "release/WindowsCosmicTile-${RELEASE_TAG}-windows-${arch}.zip"
             test -f "release/WindowsCosmicTile-${RELEASE_TAG}-windows-${arch}.sha256"
+            test -f "release/WindowsCosmicTile-${RELEASE_TAG}-windows-${arch}.exe"
+            test -f "release/WindowsCosmicTile-${RELEASE_TAG}-windows-${arch}.exe.sha256"
           done
           (cd release && sha256sum --check *.sha256)
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release/*.zip release/*.sha256 \
+            gh release upload "$RELEASE_TAG" release/*.zip release/*.exe release/*.sha256 \
               --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$RELEASE_TAG" release/*.zip release/*.sha256 \
+            gh release create "$RELEASE_TAG" release/*.zip release/*.exe release/*.sha256 \
               --repo "$GITHUB_REPOSITORY" --verify-tag \
               --title "WindowsCosmicTile $RELEASE_TAG" \
               --notes-file docs/RELEASE_NOTES.md --prerelease

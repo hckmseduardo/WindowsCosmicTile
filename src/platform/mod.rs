@@ -2,6 +2,7 @@
 mod desktop;
 mod hotkeys;
 mod indicator;
+pub(crate) mod installer;
 mod keep_awake;
 mod manager;
 
@@ -15,7 +16,7 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::*,
-    System::{LibraryLoader::GetModuleHandleW, Threading::CreateMutexW},
+    System::LibraryLoader::GetModuleHandleW,
     UI::{Accessibility::*, HiDpi::*, Shell::*, WindowsAndMessaging::*},
 };
 
@@ -384,48 +385,59 @@ unsafe fn update_message(manager: &mut Manager, key: &'static str, icon: u32) {
         MB_OK | icon,
     );
 }
-unsafe fn downloads_folder() -> Option<std::path::PathBuf> {
-    let mut path = null_mut();
-    if SHGetKnownFolderPath(&FOLDERID_Downloads, 0, null_mut(), &mut path) < 0 || path.is_null() {
-        return None;
-    }
-    let mut len = 0;
-    while *path.add(len) != 0 {
-        len += 1;
-    }
-    let folder = std::path::PathBuf::from(String::from_utf16_lossy(std::slice::from_raw_parts(
-        path, len,
-    )))
-    .join("CosmicTile Updates");
-    windows_sys::Win32::System::Com::CoTaskMemFree(path.cast());
-    Some(folder)
-}
 unsafe fn poll_updates(manager: &mut Manager) {
     use cosmitile::updates::Event;
     while let Some(event) = manager.updater.poll() {
         match event {
-            Event::Checked { manual, result: Ok(Some(release)) } => {
-                if !manual && (!manager.auto_updates || manager.declined_update == release.version.to_string()) {
-                    manager.updater.consent(false, std::path::PathBuf::new()); continue;
+            Event::Checked {
+                manual,
+                result: Ok(Some(release)),
+            } => {
+                let version = release.version.to_string();
+                if !manual && (!manager.auto_updates || manager.declined_update == version) {
+                    manager.updater.consent(None);
+                    continue;
                 }
-                let Some(folder) = downloads_folder() else {
-                    manager.updater.consent(false, std::path::PathBuf::new());
-                    if manual { update_message(manager, "The Downloads folder is unavailable.", MB_ICONERROR); } continue;
-                };
-                let text = format!("CosmicTile v{}\n\n{}\n\n{}\n\n{}", release.version, cosmitile::updates::note_summary(&release.notes), manager.language.text("Download this update? Installation is manual; no executable will be replaced or run."), folder.display());
+                let text = format!(
+                    "CosmicTile v{version}\n\n{}\n\n{}",
+                    cosmitile::updates::note_summary(&release.notes),
+                    manager.language.text("Install this update now? CosmicTile will restart when the update is ready."),
+                );
                 manager.set_resize(false);
-                let approved = MessageBoxW(manager.hwnd, wide(&text).as_ptr(), wide(manager.language.text("Update available")).as_ptr(), MB_YESNO | MB_DEFBUTTON2 | MB_ICONQUESTION) == IDYES;
-                if !approved { manager.declined_update = release.version.to_string(); manager.save_settings(); }
-                manager.updater.consent(approved, folder);
+                let approved = MessageBoxW(
+                    manager.hwnd,
+                    wide(&text).as_ptr(),
+                    wide(manager.language.text("Update available")).as_ptr(),
+                    MB_YESNO | MB_DEFBUTTON2 | MB_ICONQUESTION,
+                ) == IDYES;
+                if approved && !installer::can_install() {
+                    manager.updater.consent(None);
+                    update_message(manager, "Open CosmicTile without administrator permissions to install updates.", MB_ICONINFORMATION);
+                } else if approved {
+                    match std::env::current_exe() {
+                        Ok(executable) => manager.updater.consent(Some(executable)),
+                        Err(_) => {
+                            manager.updater.consent(None);
+                            update_message(manager, "Could not locate the installed executable.", MB_ICONERROR);
+                        }
+                    }
+                } else {
+                    manager.declined_update = version;
+                    manager.save_settings();
+                    manager.updater.consent(None);
+                }
             }
             Event::Checked { manual: true, result: Ok(None) } => update_message(manager, "No newer compatible release is available.", MB_ICONINFORMATION),
             Event::Checked { manual: true, result: Err(_) } => update_message(manager, "Could not check for updates. Please try again later.", MB_ICONERROR),
             Event::Checked { .. } => (),
-            Event::Downloaded(Ok(path)) => {
-                update_message(manager, "Download verified. Extract the ZIP and install manually after quitting CosmicTile.", MB_ICONINFORMATION);
-                if let Some(folder) = path.parent() { ShellExecuteW(manager.hwnd, wide("open").as_ptr(), wide(&folder.to_string_lossy()).as_ptr(), null(), null(), SW_SHOWNORMAL); }
+            Event::Downloaded(Ok(update)) => {
+                if installer::start(update, manager.language).is_ok() {
+                    PostMessageW(manager.hwnd, WM_CLOSE, 0, 0);
+                } else {
+                    update_message(manager, "Could not install the update. Please try again.", MB_ICONERROR);
+                }
             }
-            Event::Downloaded(Err(_)) => update_message(manager, "Download failed verification or could not be saved. No installation was performed. Please retry.", MB_ICONERROR),
+            Event::Downloaded(Err(_)) => update_message(manager, "Could not prepare the update. Check your connection and write access to the app folder, then retry.", MB_ICONERROR),
         }
     }
 }
@@ -516,20 +528,17 @@ unsafe extern "system" fn procedure(hwnd: HWND, message: u32, w: WPARAM, l: LPAR
         }
     }
 }
-pub fn run() {
+pub fn run(restart: Option<installer::Restart>) {
+    let timeout = if restart.is_some() {
+        installer::HANDOFF_TIMEOUT_MS
+    } else {
+        0
+    };
+    let Ok(_instance_guard) = installer::Instance::acquire(timeout) else {
+        return;
+    };
     // Win32 requires one owning UI thread. Every raw handle remains on this thread.
     unsafe {
-        let mutex = CreateMutexW(
-            null(),
-            0,
-            wide("Local\\WindowsCosmicTile.SingleInstance").as_ptr(),
-        );
-        if mutex.is_null() || GetLastError() == ERROR_ALREADY_EXISTS {
-            if !mutex.is_null() {
-                CloseHandle(mutex);
-            }
-            return;
-        }
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let instance = GetModuleHandleW(null());
         let class = wide("WindowsCosmicTile.Controller");
@@ -556,7 +565,6 @@ pub fn run() {
             null(),
         );
         if hwnd.is_null() {
-            CloseHandle(mutex);
             return;
         }
         OWNER.with(|owner| owner.set(hwnd));
@@ -575,6 +583,15 @@ pub fn run() {
             WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
         );
         SetTimer(hwnd, 1, 120, None);
+        if let Some(restart) = restart {
+            let language = STATE.with(|state| {
+                state
+                    .borrow()
+                    .as_ref()
+                    .map_or(Language::English, |s| s.language)
+            });
+            installer::finish_restart(restart, language);
+        }
         let mut message: MSG = zeroed();
         while GetMessageW(&mut message, null_mut(), 0, 0) > 0 {
             TranslateMessage(&message);
@@ -592,7 +609,6 @@ pub fn run() {
             state.borrow_mut().take();
         });
         OWNER.with(|owner| owner.set(null_mut()));
-        CloseHandle(mutex);
     }
 }
 

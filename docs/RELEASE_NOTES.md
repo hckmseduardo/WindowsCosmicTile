@@ -1,7 +1,5 @@
-# CosmicTile v0.2.2
+# CosmicTile v0.2.3
 
-- Use **Ctrl + Alt + arrow keys** to focus windows across displays, including displays with tiling turned off.
-- Tiling recognizes more resizable windows with custom frames and retries placement once when the requested size is not applied.
-- Open the official CosmicTile website from the tray menu.
+Approve an update from the tray and CosmicTile will verify it, update the current executable in place, and reopen. Saved preferences carry over, and your existing shortcuts still point to the same file. This works on Windows x64 and ARM64.
 
-Download the portable ZIP for Windows x64 or ARM64, extract it, and run WindowsCosmicTile.exe. Interactive validation with Fork on a multi-monitor Windows desktop is still pending.
+If you have v0.2.2 or earlier, replace your current copy with v0.2.3 once. On later releases, use **Check for updates** in the tray menu.

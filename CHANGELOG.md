@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- Install updates from the tray on Windows x64 and ARM64, then restart from the same file path.
+- Verify the download and preserve the previous executable until the new app initializes. Restore the previous executable if startup fails.
+
 ## 0.2.2
 
 - Extend directional window focus across displays, including displays with tiling turned off.

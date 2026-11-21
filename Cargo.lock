@@ -1451,12 +1451,13 @@ dependencies = [
 
 [[package]]
 name = "windows-cosmic-tile"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "reqwest",
  "semver",
  "serde_json",
  "sha2",
+ "tempfile",
  "windows-sys 0.61.2",
  "winresource",
 ]

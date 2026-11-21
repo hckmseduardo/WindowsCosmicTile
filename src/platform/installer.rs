@@ -25,6 +25,7 @@ use windows_sys::Win32::{
     },
     Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
     Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT,
+    System::Diagnostics::Debug::{GetErrorMode, SetErrorMode, SEM_FAILCRITICALERRORS},
     System::Threading::{
         CreateEventW, CreateMutexW, GetCurrentProcess, OpenEventW, OpenProcessToken, ReleaseMutex,
         SetEvent, WaitForMultipleObjects, WaitForSingleObject, EVENT_MODIFY_STATE,
@@ -142,6 +143,9 @@ pub fn dispatch(arguments: &[OsString]) -> Option<i32> {
     let [_, executable, language] = arguments else {
         return Some(1);
     };
+    // Let the updater handle loader errors and roll back without waiting for
+    // someone to dismiss a Windows critical-error dialog.
+    unsafe { SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS) };
     let language = Language::from_code(language.to_str().unwrap_or_default());
     Some(match apply(executable) {
         Ok(()) => 0,

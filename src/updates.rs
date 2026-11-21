@@ -1,19 +1,21 @@
-//! Consent-gated release discovery and verified download support.
+//! Consent-gated release discovery and verified update staging.
 use semver::Version;
 use serde_json::Value;
 #[derive(Clone, Debug)]
 pub struct Release {
     pub version: Version,
     pub notes: String,
-    name: String,
     url: String,
     size: u64,
     digest: String,
+    machine: u16,
 }
 pub fn select(data: &Value, current: &str, arch: &str) -> Option<Release> {
-    if !matches!(arch, "x64" | "arm64") {
-        return None;
-    }
+    let machine = match arch {
+        "x64" => 0x8664,
+        "arm64" => 0xaa64,
+        _ => return None,
+    };
     let current = Version::parse(current).ok()?;
     data.as_array()?
         .iter()
@@ -26,7 +28,7 @@ pub fn select(data: &Value, current: &str, arch: &str) -> Option<Release> {
             if version <= current {
                 return None;
             }
-            let name = format!("WindowsCosmicTile-v{version}-windows-{arch}.zip");
+            let name = format!("WindowsCosmicTile-v{version}-windows-{arch}.exe");
             let url = format!(
                 "https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/{tag}/{name}"
             );
@@ -56,10 +58,10 @@ pub fn select(data: &Value, current: &str, arch: &str) -> Option<Release> {
                     .take(6000)
                     .filter(|c| *c != '\0')
                     .collect(),
-                name,
                 url,
                 size,
                 digest: digest.to_ascii_lowercase(),
+                machine,
             })
         })
         .max_by(|a, b| a.version.cmp(&b.version))
@@ -69,7 +71,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     fn release(v: &str, arch: &str) -> Value {
-        let name = format!("WindowsCosmicTile-v{v}-windows-{arch}.zip");
+        let name = format!("WindowsCosmicTile-v{v}-windows-{arch}.exe");
         json!({"tag_name":format!("v{v}"), "draft":false, "prerelease":true, "body":"notes", "assets":[{"name":name,"state":"uploaded","size":3,"digest":format!("sha256:{}", "a".repeat(64)),"browser_download_url":format!("https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v{v}/{name}")}]})
     }
     #[test]
@@ -104,13 +106,14 @@ mod tests {
             ("/assets/0/digest", json!("sha256:abc")),
             ("/assets/0/digest", json!(format!("sha256:{}", "z".repeat(64)))),
             ("/assets/0/digest", json!(format!("sha512:{}", "a".repeat(64)))),
-            ("/assets/0/name", json!("../../other.zip")),
-            ("/assets/0/browser_download_url", json!("http://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.3.0/WindowsCosmicTile-v0.3.0-windows-x64.zip")),
-            ("/assets/0/browser_download_url", json!("https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.3.0/WindowsCosmicTile-v0.3.0-windows-arm64.zip")),
-            ("/assets/0/browser_download_url", json!("https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.3.0/WindowsCosmicTile-v0.3.0-windows-x64.zip?extra=true")),
+            ("/assets/0/name", json!("WindowsCosmicTile-v0.3.0-windows-x64.zip")),
+            ("/assets/0/name", json!("../../other.exe")),
+            ("/assets/0/browser_download_url", json!("http://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.3.0/WindowsCosmicTile-v0.3.0-windows-x64.exe")),
+            ("/assets/0/browser_download_url", json!("https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.3.0/WindowsCosmicTile-v0.3.0-windows-arm64.exe")),
+            ("/assets/0/browser_download_url", json!("https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.3.0/WindowsCosmicTile-v0.3.0-windows-x64.exe?extra=true")),
             (
                 "/assets/0/browser_download_url",
-                json!("https://github.com/evil/WindowsCosmicTile/releases/download/v0.3.0/x.zip"),
+                json!("https://github.com/evil/WindowsCosmicTile/releases/download/v0.3.0/x.exe"),
             ),
         ] {
             let mut item = valid.clone();
@@ -127,12 +130,15 @@ mod tests {
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 const MAX_BYTES: u64 = 512 * 1024 * 1024;
+pub const STAGING_PREFIX: &str = ".cosmictile-update-";
+pub const STAGING_SUFFIX_LEN: usize = 12;
+pub const REPLACEMENT_EXE: &str = "replacement.exe";
 const API: &str =
     "https://api.github.com/repos/hckmseduardo/WindowsCosmicTile/releases?per_page=100";
 pub fn now() -> u64 {
@@ -199,46 +205,12 @@ fn check() -> Result<Option<Release>, String> {
     };
     Ok(select(&data, env!("CARGO_PKG_VERSION"), arch))
 }
-fn verify(path: &Path, release: &Release) -> bool {
-    let Ok(file) = File::open(path) else {
-        return false;
-    };
-    if file.metadata().map(|m| m.len()).ok() != Some(release.size) {
-        return false;
-    }
-    let mut hash = Sha256::new();
-    let mut limited = file.take(release.size + 1);
-    std::io::copy(&mut limited, &mut hash).is_ok()
-        && format!("{:x}", hash.finalize()) == release.digest
-}
-fn store(mut input: impl Read, release: &Release, folder: &Path) -> Result<PathBuf, String> {
-    fs::create_dir_all(folder).map_err(|e| e.to_string())?;
-    let final_path = folder.join(&release.name);
-    if final_path.exists() {
-        return if verify(&final_path, release) {
-            Ok(final_path)
-        } else {
-            Err("An existing download has different contents; move it before retrying.".into())
-        };
-    }
-    let mut partial = None;
-    for n in 0..100u32 {
-        let path = folder.join(format!(
-            ".{}-{}-{}-{n}.part",
-            release.name,
-            std::process::id(),
-            now()
-        ));
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(file) => {
-                partial = Some((path, file));
-                break;
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-    let (path, mut file) = partial.ok_or("Cannot create a unique partial download")?;
+fn store(mut input: impl Read, release: &Release, path: &Path) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
     let result = (|| {
         let mut hash = Sha256::new();
         let mut total = 0u64;
@@ -258,22 +230,50 @@ fn store(mut input: impl Read, release: &Release, folder: &Path) -> Result<PathB
         if total != release.size || format!("{:x}", hash.finalize()) != release.digest {
             return Err("Download size or SHA-256 does not match GitHub metadata".into());
         }
-        file.sync_all().map_err(|e| e.to_string())?;
-        drop(file);
-        // Hard-link publishes a complete file atomically without replacing an existing file.
-        match fs::hard_link(&path, &final_path) {
-            Ok(()) => Ok(final_path.clone()),
-            Err(_) if verify(&final_path, release) => Ok(final_path.clone()),
-            Err(e) => Err(e.to_string()),
-        }
+        file.sync_all().map_err(|e| e.to_string())
     })();
-    let _ = fs::remove_file(path);
+    drop(file);
+    if result.is_err() {
+        let _ = fs::remove_file(path);
+    }
     result
 }
-fn download(release: &Release, folder: &Path) -> Result<PathBuf, String> {
-    if verify(&folder.join(&release.name), release) {
-        return Ok(folder.join(&release.name));
+fn check_executable(mut executable: impl Read + Seek, machine: u16) -> std::io::Result<()> {
+    let invalid = || {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Update is not a Windows executable for this CPU",
+        )
+    };
+    let mut dos = [0; 64];
+    executable.read_exact(&mut dos)?;
+    let offset = u32::from_le_bytes([dos[60], dos[61], dos[62], dos[63]]);
+    if !dos.starts_with(b"MZ") || offset < 64 {
+        return Err(invalid());
     }
+    executable.seek(SeekFrom::Start(u64::from(offset)))?;
+    let mut pe = [0; 6];
+    executable.read_exact(&mut pe)?;
+    if !pe.starts_with(b"PE\0\0") || u16::from_le_bytes([pe[4], pe[5]]) != machine {
+        return Err(invalid());
+    }
+    Ok(())
+}
+#[derive(Debug)]
+pub struct StagedUpdate {
+    pub directory: tempfile::TempDir,
+    pub executable: PathBuf,
+}
+
+fn download(release: &Release, executable: PathBuf) -> Result<StagedUpdate, String> {
+    let parent = executable
+        .parent()
+        .ok_or("Cannot locate the installation folder")?;
+    let directory = tempfile::Builder::new()
+        .prefix(STAGING_PREFIX)
+        .rand_bytes(STAGING_SUFFIX_LEN)
+        .tempdir_in(parent)
+        .map_err(|e| e.to_string())?;
     let response = client()?
         .get(&release.url)
         .send()
@@ -282,7 +282,14 @@ fn download(release: &Release, folder: &Path) -> Result<PathBuf, String> {
     if response.content_length().is_some_and(|n| n != release.size) {
         return Err("Unexpected HTTP content length".into());
     }
-    store(response, release, folder)
+    let candidate = directory.path().join(REPLACEMENT_EXE);
+    store(response, release, &candidate)?;
+    let file = File::open(candidate).map_err(|e| e.to_string())?;
+    check_executable(file, release.machine).map_err(|e| e.to_string())?;
+    Ok(StagedUpdate {
+        directory,
+        executable,
+    })
 }
 #[derive(Debug)]
 pub enum Event {
@@ -290,7 +297,7 @@ pub enum Event {
         manual: bool,
         result: Result<Option<Release>, String>,
     },
-    Downloaded(Result<PathBuf, String>),
+    Downloaded(Result<StagedUpdate, String>),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
@@ -345,21 +352,18 @@ impl Updater {
         }
         Some(event)
     }
-    /// Only a direct native-dialog Yes response may pass `true` here.
-    pub fn consent(&mut self, approved: bool, folder: PathBuf) {
+    /// Only a direct native-dialog Yes response may supply an executable path.
+    pub fn consent(&mut self, executable: Option<PathBuf>) {
         if self.phase != Phase::AwaitingConsent {
             return;
         }
         let release = self.pending.take();
         self.phase = Phase::Idle;
-        if !approved {
-            return;
-        }
-        if let Some(release) = release {
+        if let (Some(release), Some(executable)) = (release, executable) {
             self.phase = Phase::Downloading;
             let tx = self.tx.clone();
             std::thread::spawn(move || {
-                let _ = tx.send(Event::Downloaded(download(&release, &folder)));
+                let _ = tx.send(Event::Downloaded(download(&release, executable)));
             });
         }
     }
@@ -370,28 +374,24 @@ mod integrity_tests {
     use super::*;
     use std::io::Cursor;
     fn candidate() -> Release {
-        Release { version:Version::parse("0.3.0").unwrap(), notes:String::new(), name:"WindowsCosmicTile-v0.3.0-windows-x64.zip".into(),url:"https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.3.0/WindowsCosmicTile-v0.3.0-windows-x64.zip".into(),size:3,digest:format!("{:x}",Sha256::digest(b"abc")) }
-    }
-    fn directory() -> PathBuf {
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        std::env::temp_dir().join(format!(
-            "cosmitile-update-test-{}-{}-{}",
-            std::process::id(),
-            now(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ))
+        Release {
+            version: Version::parse("0.3.0").unwrap(),
+            notes: String::new(),
+            url: "https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.3.0/WindowsCosmicTile-v0.3.0-windows-x64.exe".into(),
+            size: 3,
+            digest: format!("{:x}", Sha256::digest(b"abc")),
+            machine: 0x8664,
+        }
     }
     #[test]
-    fn verified_files_are_reused_and_never_overwritten() {
-        let dir = directory();
+    fn verified_candidate_is_written_without_overwriting_existing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(REPLACEMENT_EXE);
         let r = candidate();
-        let path = store(Cursor::new(b"abc"), &r, &dir).unwrap();
+        store(Cursor::new(b"abc"), &r, &path).unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"abc");
-        assert_eq!(store(Cursor::new(b"unused"), &r, &dir).unwrap(), path);
-        fs::write(&path, b"old").unwrap();
-        assert!(store(Cursor::new(b"abc"), &r, &dir).is_err());
-        assert_eq!(fs::read(&path).unwrap(), b"old");
-        fs::remove_dir_all(dir).unwrap();
+        assert!(store(Cursor::new(b"xyz"), &r, &path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"abc");
     }
     #[test]
     fn truncated_oversized_corrupt_and_interrupted_streams_leave_no_files() {
@@ -402,22 +402,31 @@ mod integrity_tests {
             }
         }
         let r = candidate();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(REPLACEMENT_EXE);
         for bytes in [b"ab".as_slice(), b"abcd", b"xyz"] {
-            let dir = directory();
-            assert!(store(Cursor::new(bytes), &r, &dir).is_err());
-            assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
-            fs::remove_dir_all(dir).unwrap();
+            assert!(store(Cursor::new(bytes), &r, &path).is_err());
+            assert!(!path.exists());
         }
-        let dir = directory();
-        assert!(store(Broken, &r, &dir).is_err());
-        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
-        fs::remove_dir_all(dir).unwrap();
+        assert!(store(Broken, &r, &path).is_err());
+        assert!(!path.exists());
+    }
+    #[test]
+    fn executable_header_must_match_the_running_architecture() {
+        let mut bytes = [0; 70];
+        bytes[..2].copy_from_slice(b"MZ");
+        bytes[60..64].copy_from_slice(&64u32.to_le_bytes());
+        bytes[64..70].copy_from_slice(b"PE\0\0\x64\x86");
+        assert!(check_executable(Cursor::new(bytes), 0x8664).is_ok());
+        assert!(check_executable(Cursor::new(bytes), 0xaa64).is_err());
+        assert!(check_executable(Cursor::new(b"not an executable"), 0x8664).is_err());
     }
     #[test]
     fn decline_and_stale_consent_never_start_download_or_create_folder() {
         let mut updater = Updater::default();
-        let dir = directory();
-        updater.consent(true, dir.clone());
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("installed.exe");
+        updater.consent(Some(path.clone()));
         assert_eq!(updater.phase, Phase::Idle);
         updater.phase = Phase::Checking;
         assert!(!updater.check(true));
@@ -431,11 +440,11 @@ mod integrity_tests {
         assert!(matches!(updater.poll(), Some(Event::Checked { .. })));
         assert_eq!(updater.phase, Phase::AwaitingConsent);
         assert!(!updater.check(true));
-        updater.consent(false, dir.clone());
+        updater.consent(None);
         assert_eq!(updater.phase, Phase::Idle);
         assert!(updater.pending.is_none());
-        updater.consent(true, dir.clone());
-        assert!(!dir.exists());
+        updater.consent(Some(path));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
         assert!(updater.poll().is_none());
     }
     #[test]

@@ -69,6 +69,15 @@ foreach ($recovery in @($false, $true)) {
             $running | Wait-Process -Timeout 10
         }
         $env:APPDATA = $originalAppData
-        Remove-Item -LiteralPath $folder -Recurse -Force
+        # Windows can still hold the executable briefly after Wait-Process.
+        for ($attempt = 1; $attempt -le 50; $attempt++) {
+            try {
+                Remove-Item -LiteralPath $folder -Recurse -Force
+                break
+            } catch [System.UnauthorizedAccessException], [System.IO.IOException] {
+                if ($attempt -eq 50) { throw }
+                Start-Sleep -Milliseconds 100
+            }
+        }
     }
 }

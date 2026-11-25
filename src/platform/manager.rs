@@ -621,7 +621,7 @@ impl Manager {
             let minimums = self.monitor_minimums(&monitor.id);
             if let Some(tree) = self.layouts.get_mut(&monitor.id) {
                 let area = monitor.work.inset(self.gap);
-                if let Some(fitted) = tree.regroup_three_windows(area, self.gap, &minimums) {
+                if let Some(fitted) = tree.regroup_for_minimums(area, self.gap, &minimums) {
                     *tree = fitted;
                 }
                 requests.extend(tree.frames_with_minimums(area, self.gap, &minimums));

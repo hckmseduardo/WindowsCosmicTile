@@ -6,6 +6,14 @@ pub enum Axis {
     Horizontal,
     Vertical,
 }
+impl Axis {
+    fn other(self) -> Self {
+        match self {
+            Self::Horizontal => Self::Vertical,
+            Self::Vertical => Self::Horizontal,
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Size {
     pub w: i32,
@@ -144,7 +152,8 @@ impl Layout {
         self.place(rect, gap.max(0), minimums, &mut frames);
         frames
     }
-    pub fn regroup_three_windows(
+    /// Look for a layout that fits observed minimums while keeping every window tiled.
+    pub fn regroup_for_minimums(
         &self,
         rect: Rect,
         gap: i32,
@@ -153,31 +162,89 @@ impl Layout {
         if minimums.is_empty() {
             return None;
         }
-        let Self::Split(_, _, a, b) = self else {
+        let Self::Split(axis, ratio, a, b) = self else {
             return None;
         };
-        let (single, pair) = match (&**a, &**b) {
-            (Self::Leaf(id), Self::Split(_, _, first, second))
-            | (Self::Split(_, _, first, second), Self::Leaf(id)) => (id, (first, second)),
-            _ => return None,
-        };
-        let (Self::Leaf(first), Self::Leaf(second)) = (&**pair.0, &**pair.1) else {
+        let ids = self.ids();
+        if ids.len() < 3 {
             return None;
+        }
+        let fits = |id, frame: Rect| {
+            frame.w > 0 && frame.h > 0 && minimums.get(&id).is_none_or(|size| size.fits(frame))
         };
-        let fits = |layout: &Self| {
+        let frames = self.frames_with_minimums(rect, gap, minimums);
+        if frames.iter().all(|(id, frame)| fits(*id, *frame)) {
+            return None;
+        }
+        let all_fit = |layout: &Self| {
             layout
                 .frames_with_minimums(rect, gap, minimums)
                 .into_iter()
-                .all(|(id, frame)| minimums.get(&id).is_none_or(|size| size.fits(frame)))
+                .all(|(id, frame)| fits(id, frame))
         };
-        // Let a window take the full span when it cannot share its current side.
-        if fits(self) {
-            return None;
+
+        // Try reusing an existing full row or column before changing splits.
+        let single = match (&**a, &**b) {
+            (Self::Leaf(id), _) | (_, Self::Leaf(id)) => Some(*id),
+            _ => None,
+        };
+        if let Some(single) = single {
+            if let Some(fitted) = ids
+                .iter()
+                .copied()
+                .filter(|id| *id != single)
+                .map(|id| self.swapped(single, id))
+                .find(all_fit)
+            {
+                return Some(fitted);
+            }
         }
-        [first, second]
+
+        let mut constrained: Vec<_> = ids
             .into_iter()
-            .map(|id| self.swapped(*single, *id))
-            .find(fits)
+            .filter_map(|id| minimums.get(&id).map(|size| (id, size)))
+            .collect();
+        constrained.sort_by_key(|(_, size)| {
+            std::cmp::Reverse(
+                (i64::from(size.w) * i64::from(rect.h)).max(i64::from(size.h) * i64::from(rect.w)),
+            )
+        });
+        for (id, _) in constrained {
+            let Some(remaining) = self.clone().remove(id) else {
+                continue;
+            };
+            let frame = frames[&id];
+            for axis in [*axis, axis.other()] {
+                // Give the constrained window its own span on the nearer edge.
+                let place_first = match axis {
+                    Axis::Horizontal => frame.x - rect.x <= rect.right() - frame.right(),
+                    Axis::Vertical => frame.y - rect.y <= rect.bottom() - frame.bottom(),
+                };
+                // Try the existing group, then stack its tiles if it needs
+                // the full width or height of the neighboring span.
+                for group in [remaining.clone(), remaining.aligned(axis.other())] {
+                    let leaf = Self::Leaf(id);
+                    let (a, b) = if place_first {
+                        (leaf, group)
+                    } else {
+                        (group, leaf)
+                    };
+                    let candidate = Self::split(axis, *ratio, a, b);
+                    if all_fit(&candidate) {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+        None
+    }
+    fn aligned(&self, axis: Axis) -> Self {
+        match self {
+            Self::Leaf(id) => Self::Leaf(*id),
+            Self::Split(_, ratio, a, b) => {
+                Self::split(axis, *ratio, a.aligned(axis), b.aligned(axis))
+            }
+        }
     }
     fn minimum_size(&self, gap: i32, minimums: &BTreeMap<isize, Size>) -> Size {
         match self {
@@ -211,10 +278,7 @@ impl Layout {
                 if !minimums.is_empty() {
                     minimum_a = a.minimum_size(gap, minimums);
                     minimum_b = b.minimum_size(gap, minimums);
-                    let alternate = match axis {
-                        Axis::Horizontal => Axis::Vertical,
-                        Axis::Vertical => Axis::Horizontal,
-                    };
+                    let alternate = axis.other();
                     if !minimum_a.split(minimum_b, axis, gap).fits(rect)
                         && minimum_a.split(minimum_b, alternate, gap).fits(rect)
                     {

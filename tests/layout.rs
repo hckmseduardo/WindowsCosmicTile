@@ -194,12 +194,42 @@ fn tall_window_can_take_a_full_column_when_three_windows_do_not_fit() {
         (3, Size { w: 640, h: 380 }),
     ]);
     assert!(tree.frames_with_minimums(area, 8, &minimums)[&2].h < 840);
-    let fitted = tree.regroup_three_windows(area, 8, &minimums).unwrap();
+    let fitted = tree.regroup_for_minimums(area, 8, &minimums).unwrap();
     let frames = fitted.frames_with_minimums(area, 8, &minimums);
     assert_eq!(frames[&2], Rect::new(1010, 8, 1030, 1080));
     assert_eq!(frames[&1], Rect::new(8, 8, 994, 536));
     assert_eq!(frames[&3], Rect::new(8, 552, 994, 536));
-    assert!(fitted.regroup_three_windows(area, 8, &minimums).is_none());
+    assert!(fitted.regroup_for_minimums(area, 8, &minimums).is_none());
+}
+
+#[test]
+fn tall_window_gets_a_column_when_four_window_grid_would_overlap() {
+    let tree = Layout::split(
+        Axis::Horizontal,
+        0.5,
+        Layout::split(Axis::Vertical, 0.5, Layout::Leaf(1), Layout::Leaf(2)),
+        Layout::split(Axis::Vertical, 0.5, Layout::Leaf(3), Layout::Leaf(4)),
+    );
+    let area = Rect::new(-2550, 10, 2540, 1348);
+    let minimums = BTreeMap::from([
+        (1, Size { w: 1270, h: 1010 }),
+        (2, Size { w: 750, h: 345 }),
+        (3, Size { w: 1120, h: 620 }),
+        (4, Size { w: 550, h: 350 }),
+    ]);
+    assert!(tree.frames_with_minimums(area, 10, &minimums)[&1].h < minimums[&1].h);
+
+    let fitted = tree.regroup_for_minimums(area, 10, &minimums).unwrap();
+    let frames = fitted.frames_with_minimums(area, 10, &minimums);
+    assert_eq!(frames[&1], Rect::new(-2550, 10, 1270, 1348));
+    for (id, frame) in &frames {
+        assert!(frame.w >= minimums[id].w && frame.h >= minimums[id].h);
+        assert_eq!(*frame, frame.clamped(area));
+        assert!(frames
+            .iter()
+            .all(|(other, r)| id == other || frame.overlap(*r) == 0));
+    }
+    assert!(fitted.regroup_for_minimums(area, 10, &minimums).is_none());
 }
 
 #[test]

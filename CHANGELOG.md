@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.6
+
+- Rearrange layouts with three or more windows when a large window needs its own row or column and the other windows can fit beside it.
+- Resume tiling on previously enabled displays after an in-app update or rollback. Updating from v0.2.5 or earlier requires re-enabling each display once.
+
 ## 0.2.5
 
 - Retry a rejected tile placement with separate move and resize requests when the window also missed its target position.

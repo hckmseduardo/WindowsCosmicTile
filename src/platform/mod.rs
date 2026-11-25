@@ -432,7 +432,7 @@ unsafe fn poll_updates(manager: &mut Manager) {
             Event::Checked { manual: true, result: Err(_) } => update_message(manager, "Could not check for updates. Please try again later.", MB_ICONERROR),
             Event::Checked { .. } => (),
             Event::Downloaded(Ok(update)) => {
-                if installer::start(update, manager.language).is_ok() {
+                if installer::start(update, manager.language, &manager.policy.active).is_ok() {
                     PostMessageW(manager.hwnd, WM_CLOSE, 0, 0);
                 } else {
                     update_message(manager, "Could not install the update. Please try again.", MB_ICONERROR);
@@ -571,6 +571,9 @@ pub fn run(restart: Option<installer::Restart>) {
         OWNER.with(|owner| owner.set(hwnd));
         STATE.with(|state| *state.borrow_mut() = Some(Manager::new(hwnd)));
         with_state(|s| {
+            if let Some(restart) = &restart {
+                s.policy.active.clone_from(&restart.active_displays);
+            }
             s.reconcile();
             tray(s, NIM_ADD);
         });

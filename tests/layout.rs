@@ -1,4 +1,5 @@
-use cosmitile::core::{Axis, Layout, MonitorState, Rect};
+use cosmitile::core::{Axis, Layout, MonitorState, Rect, Size};
+use std::collections::BTreeMap;
 
 #[test]
 fn splits_negative_monitor_coordinates_without_overlap() {
@@ -91,7 +92,6 @@ fn default_language_is_english_and_unknown_language_falls_back() {
 #[test]
 fn crowded_focused_region_uses_larger_neighbor() {
     use cosmitile::core::choose_target;
-    use std::collections::BTreeMap;
     let frames = BTreeMap::from([
         (1, Rect::new(0, 0, 700, 900)),
         (2, Rect::new(700, 0, 700, 445)),
@@ -102,7 +102,6 @@ fn crowded_focused_region_uses_larger_neighbor() {
 #[test]
 fn direction_chooses_neighbor_in_requested_half_plane() {
     use cosmitile::core::neighbor;
-    use std::collections::BTreeMap;
     let frames = BTreeMap::from([
         (1, Rect::new(-1000, 0, 500, 800)),
         (2, Rect::new(-490, 0, 490, 800)),
@@ -131,6 +130,53 @@ fn placement_observation_tolerates_rounding_but_detects_an_ignored_resize() {
     assert!(requested.matches_placement(Rect::new(-999, 9, 499, 801)));
     assert!(!requested.matches_placement(Rect::new(-1000, 10, 700, 800)));
 }
+
+#[test]
+fn only_a_stable_oversize_at_the_requested_origin_is_a_minimum() {
+    let requested = Rect::new(-1000, 10, 500, 800);
+    let first = Rect::new(-1000, 10, 700, 801);
+    let corrected = Rect::new(-999, 10, 700, 801);
+    assert_eq!(
+        requested.observed_minimum(first, corrected),
+        Size { w: 700, h: 0 }
+    );
+    assert_eq!(
+        requested.observed_minimum(first, requested),
+        Size::default()
+    );
+    let drifted = Rect::new(-950, 10, 700, 801);
+    assert_eq!(requested.observed_minimum(first, drifted), Size::default());
+}
+
+#[test]
+fn an_oversized_tile_moves_the_split_and_keeps_the_gap() {
+    let tree = Layout::split(
+        Axis::Horizontal,
+        0.5,
+        Layout::Leaf(1),
+        Layout::split(Axis::Vertical, 0.5, Layout::Leaf(2), Layout::Leaf(3)),
+    );
+    let area = Rect::new(-1200, 30, 1200, 800);
+    let minimums = BTreeMap::from([(3, Size { w: 720, h: 0 })]);
+    let frames = tree.frames_with_minimums(area, 10, &minimums);
+    assert_eq!(frames[&1], Rect::new(-1200, 30, 470, 800));
+    assert_eq!(frames[&2], Rect::new(-720, 30, 720, 395));
+    assert_eq!(frames[&3], Rect::new(-720, 435, 720, 395));
+}
+
+#[test]
+fn wide_windows_stack_when_they_only_fit_vertically() {
+    let tree = Layout::split(Axis::Horizontal, 0.5, Layout::Leaf(1), Layout::Leaf(2));
+    let area = Rect::new(0, 0, 1200, 900);
+    let minimums = BTreeMap::from([(1, Size { w: 650, h: 450 }), (2, Size { w: 720, h: 0 })]);
+    let frames = tree.frames_with_minimums(area, 10, &minimums);
+    assert_eq!(frames[&1], Rect::new(0, 0, 1200, 450));
+    assert_eq!(frames[&2], Rect::new(0, 460, 1200, 440));
+    // A wider monitor has room for the original orientation again.
+    let frames = tree.frames_with_minimums(Rect::new(0, 0, 1600, 900), 10, &minimums);
+    assert_eq!(frames[&2], Rect::new(805, 0, 795, 900));
+}
+
 #[test]
 fn transfer_waits_for_destination_instead_of_reinserting_on_source() {
     use cosmitile::core::Transfers;

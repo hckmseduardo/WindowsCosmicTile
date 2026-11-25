@@ -6,6 +6,29 @@ pub enum Axis {
     Horizontal,
     Vertical,
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Size {
+    pub w: i32,
+    pub h: i32,
+}
+impl Size {
+    fn split(self, other: Self, axis: Axis, gap: i32) -> Self {
+        match axis {
+            Axis::Horizontal => Self {
+                w: self.w.saturating_add(other.w).saturating_add(gap),
+                h: self.h.max(other.h),
+            },
+            Axis::Vertical => Self {
+                w: self.w.max(other.w),
+                h: self.h.saturating_add(other.h).saturating_add(gap),
+            },
+        }
+    }
+    fn fits(self, rect: Rect) -> bool {
+        self.w <= rect.w && self.h <= rect.h
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
     pub x: i32,
@@ -60,6 +83,27 @@ impl Rect {
             && self.right().abs_diff(actual.right()) <= 1
             && self.bottom().abs_diff(actual.bottom()) <= 1
     }
+    pub fn observed_minimum(self, first: Self, corrected: Self) -> Size {
+        // Both placements must have reached the tile's origin. A pending move
+        // or DWM rounding is not evidence of an application size limit.
+        if [first, corrected]
+            .iter()
+            .any(|frame| self.x.abs_diff(frame.x) > 1 || self.y.abs_diff(frame.y) > 1)
+        {
+            return Size::default();
+        }
+        let stable_minimum = |wanted: i32, first: i32, corrected: i32| {
+            if corrected > wanted.saturating_add(2) && first == corrected {
+                corrected
+            } else {
+                0
+            }
+        };
+        Size {
+            w: stable_minimum(self.w, first.w, corrected.w),
+            h: stable_minimum(self.h, first.h, corrected.h),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -89,34 +133,87 @@ impl Layout {
         }
     }
     pub fn frames(&self, rect: Rect, gap: i32) -> BTreeMap<isize, Rect> {
+        self.frames_with_minimums(rect, gap, &BTreeMap::new())
+    }
+    pub fn frames_with_minimums(
+        &self,
+        rect: Rect,
+        gap: i32,
+        minimums: &BTreeMap<isize, Size>,
+    ) -> BTreeMap<isize, Rect> {
+        let mut frames = BTreeMap::new();
+        self.place(rect, gap.max(0), minimums, &mut frames);
+        frames
+    }
+    fn minimum_size(&self, gap: i32, minimums: &BTreeMap<isize, Size>) -> Size {
         match self {
-            Self::Leaf(id) => BTreeMap::from([(*id, rect)]),
-            Self::Split(axis, ratio, a, b) => {
-                let length = if *axis == Axis::Horizontal {
-                    rect.w
-                } else {
-                    rect.h
+            Self::Leaf(id) => {
+                let observed = minimums.get(id).copied().unwrap_or_default();
+                Size {
+                    w: observed.w.max(1),
+                    h: observed.h.max(1),
                 }
-                .max(0);
-                let gap = gap.max(0).min(length);
-                let first = ((length - gap) as f64 * ratio.clamp(0.15, 0.85)).round() as i32;
+            }
+            Self::Split(axis, _, a, b) => {
+                a.minimum_size(gap, minimums)
+                    .split(b.minimum_size(gap, minimums), *axis, gap)
+            }
+        }
+    }
+    fn place(
+        &self,
+        rect: Rect,
+        gap: i32,
+        minimums: &BTreeMap<isize, Size>,
+        frames: &mut BTreeMap<isize, Rect>,
+    ) {
+        match self {
+            Self::Leaf(id) => {
+                frames.insert(*id, rect);
+            }
+            Self::Split(axis, ratio, a, b) => {
+                let (mut axis, mut minimum_a, mut minimum_b) =
+                    (*axis, Size::default(), Size::default());
+                if !minimums.is_empty() {
+                    minimum_a = a.minimum_size(gap, minimums);
+                    minimum_b = b.minimum_size(gap, minimums);
+                    let alternate = match axis {
+                        Axis::Horizontal => Axis::Vertical,
+                        Axis::Vertical => Axis::Horizontal,
+                    };
+                    if !minimum_a.split(minimum_b, axis, gap).fits(rect)
+                        && minimum_a.split(minimum_b, alternate, gap).fits(rect)
+                    {
+                        axis = alternate;
+                    }
+                }
+                let (length, lower, other_minimum) = match axis {
+                    Axis::Horizontal => (rect.w, minimum_a.w, minimum_b.w),
+                    Axis::Vertical => (rect.h, minimum_a.h, minimum_b.h),
+                };
+                let gap = gap.min(length.max(0));
+                let available = length.max(0) - gap;
+                let mut first = (f64::from(available) * ratio.clamp(0.15, 0.85)).round() as i32;
+                let upper = available - other_minimum;
+                if lower <= upper {
+                    first = first.clamp(lower, upper);
+                }
                 let mut ra = rect;
                 let mut rb = rect;
                 match axis {
                     Axis::Horizontal => {
                         ra.w = first;
                         rb.x += first + gap;
-                        rb.w = length - first - gap;
+                        rb.w = available - first;
                     }
                     Axis::Vertical => {
                         ra.h = first;
                         rb.y += first + gap;
-                        rb.h = length - first - gap;
+                        rb.h = available - first;
                     }
                 }
-                let mut frames = a.frames(ra, gap);
-                frames.extend(b.frames(rb, gap));
-                frames
+                a.place(ra, gap, minimums, frames);
+                b.place(rb, gap, minimums, frames);
             }
         }
     }

@@ -11,18 +11,18 @@ Independent monitors · Visible focus · Keyboard resizing · No web runtime
 
 [![Windows builds](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml/badge.svg)](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml)
 
-[Official website](https://cosmictile.app.amazing-ai.tools) · [Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.2.3) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
+[Official website](https://cosmictile.app.amazing-ai.tools) · [Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.2.4) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
 
 </div>
 
-> **v0.2.3 preview.** Independent project, not affiliated with System76. Native builds are provided for **x64** and **ARM64**. This is a first Windows implementation, not a claim of complete COSMIC feature parity or compatibility with every application.
+> **v0.2.4 preview.** Independent project, not affiliated with System76. Native builds are provided for **x64** and **ARM64**. This is a first Windows implementation, not a claim of complete COSMIC feature parity or compatibility with every application.
 
 ## Choose your download
 
 | Your computer | Native package |
 | --- | --- |
-| Intel / AMD 64-bit Windows | [Windows x64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.3/WindowsCosmicTile-v0.2.3-windows-x64.zip) |
-| Windows on ARM, including Snapdragon | [Windows ARM64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.3/WindowsCosmicTile-v0.2.3-windows-arm64.zip) |
+| Intel / AMD 64-bit Windows | [Windows x64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.4/WindowsCosmicTile-v0.2.4-windows-x64.zip) |
+| Windows on ARM, including Snapdragon | [Windows ARM64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.4/WindowsCosmicTile-v0.2.4-windows-arm64.zip) |
 
 The ARM64 file is built for `aarch64-pc-windows-msvc`; it is not a renamed x64 executable. Both are 64-bit builds. The app targets current Windows 10/11 desktop systems; Windows 11 is recommended, particularly on ARM. Windows 10 application compatibility has not been interactively validated.
 
@@ -66,7 +66,7 @@ The executable is **not Authenticode signed**. SmartScreen can warn about an unk
 Every release ZIP has a matching `.sha256` file:
 
 ```powershell
-Get-FileHash .\WindowsCosmicTile-v0.2.3-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\WindowsCosmicTile-v0.2.4-windows-x64.zip -Algorithm SHA256
 ```
 
 Compare the hash with the text in the corresponding checksum file.
@@ -115,7 +115,7 @@ The tray menu checks GitHub releases automatically at startup and at most once p
 
 A newer compatible release shows its version and release notes. Choose **Yes** to download and install it. The app verifies the size, GitHub SHA-256 digest and CPU architecture, then closes, updates the executable in the same location and reopens. Your saved preferences and shortcuts still work after the update. A declined version is skipped by automatic checks, and you can reconsider from **Check for updates**.
 
-If you use v0.2.2 or earlier, install v0.2.3 once to get in-app installation for future updates. Run CosmicTile as a regular user from a folder you can write to. See [update behavior and integrity](docs/UPDATES.md).
+If you use v0.2.2 or earlier, install the current preview manually to get in-app installation for future updates. Run CosmicTile as a regular user from a folder you can write to. See [update behavior and integrity](docs/UPDATES.md).
 
 ## Keyboard shortcuts
 
@@ -174,7 +174,7 @@ The portable engine can also be tested on macOS/Linux with `cargo test`; the app
 | `src/platform/hotkeys.rs` | Permanent and temporary global hotkeys |
 | `src/platform/mod.rs` | Win32 message loop, tray menu and focus-event hook |
 
-The process is per-monitor DPI aware. Geometry comes from `MONITORINFO.rcWork`, and DWM visible bounds compensate for invisible resize borders. A foreground-event hook refreshes state, with roughly 360 ms reconciliation and 120 ms hint polling as fallback. Cross-process positioning is asynchronous. CosmicTile restores maximized windows before measuring borders and checks the resulting bounds before making one corrective placement request. Mouse dragging pauses reconciliation.
+The process is per-monitor DPI aware. Geometry comes from `MONITORINFO.rcWork`, and DWM visible bounds compensate for invisible resize borders. A foreground-event hook refreshes state, with roughly 360 ms reconciliation and 120 ms hint polling as fallback. Cross-process positioning is asynchronous. CosmicTile restores maximized windows before measuring borders and checks the resulting bounds before making one corrective placement request. If the window still stops at the same larger size, CosmicTile uses it as a minimum and adjusts the split when there is room. Mouse dragging pauses reconciliation.
 
 ## Troubleshooting and limitations
 
@@ -182,7 +182,7 @@ The process is per-monitor DPI aware. Geometry comes from `MONITORINFO.rcWork`, 
 | --- | --- |
 | A monitor stays floating | Enable its individual tray switch. New monitors start off. |
 | A window refuses movement | Elevated apps may be protected by Windows privilege boundaries; application-specific constraints also apply. |
-| Windows overlap | The initial engine uses size heuristics, not a complete minimum-size solver. Reduce window count/gaps, rotate a split, or float an affected window. |
+| Windows overlap | The available layout may be too small for every app's minimum size. Reduce window count or gaps, rotate a split, or float an affected window. |
 | Arrow keys resize instead of typing | Exit resize mode with Escape or Ctrl + Alt + R. |
 | The hint disappears | It hides when focus belongs to an unmanaged window or disabled display. |
 | A dialog still tiles | Report its application and reproduction steps; custom dialogs may not expose standard owner/class metadata. |

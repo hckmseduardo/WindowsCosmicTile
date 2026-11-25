@@ -107,7 +107,7 @@ Gap, hint state/color and language are stored in:
 %APPDATA%\WindowsCosmicTile\settings.conf
 ```
 
-Layout trees, active-display switches and floating-window state are session-only. The app does not install a startup entry or send window metadata over the network.
+Layout trees and floating-window state are session-only. An in-app update keeps tiling enabled for the displays that were already active. The app does not install a startup entry or send window metadata over the network.
 
 ## Updates
 

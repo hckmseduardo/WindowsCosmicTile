@@ -6,6 +6,7 @@ use cosmitile::{
     updates::{StagedUpdate, REPLACEMENT_EXE, STAGING_PREFIX, STAGING_SUFFIX_LEN},
 };
 use std::{
+    collections::BTreeSet,
     ffi::{OsStr, OsString},
     fs, io,
     os::windows::{
@@ -34,6 +35,7 @@ use windows_sys::Win32::{
 };
 
 const PREVIOUS_EXE: &str = "previous.exe";
+const ACTIVE_DISPLAYS: &str = "active-displays.json";
 const APPLY: &str = "--apply-update";
 const FINISH: &str = "--finish-update";
 const RECOVERY_MESSAGE: &str = "COSMICTILE_UPDATE_RECOVERY_MESSAGE";
@@ -115,7 +117,11 @@ pub fn can_install() -> bool {
     }
 }
 
-pub fn start(update: StagedUpdate, language: Language) -> io::Result<()> {
+pub fn start(
+    update: StagedUpdate,
+    language: Language,
+    active_displays: &BTreeSet<String>,
+) -> io::Result<()> {
     let name = update
         .executable
         .file_name()
@@ -124,7 +130,14 @@ pub fn start(update: StagedUpdate, language: Language) -> io::Result<()> {
             io::ErrorKind::InvalidInput,
             "Invalid executable name",
         ))?;
-    let helper = update.directory.path().join(PREVIOUS_EXE);
+    let stage = update.directory.path();
+    if !active_displays.is_empty() {
+        fs::write(
+            stage.join(ACTIVE_DISPLAYS),
+            serde_json::to_vec(active_displays)?,
+        )?;
+    }
+    let helper = stage.join(PREVIOUS_EXE);
     fs::copy(&update.executable, &helper)?;
     Command::new(helper)
         .arg(APPLY)
@@ -159,6 +172,7 @@ pub fn dispatch(arguments: &[OsString]) -> Option<i32> {
 pub struct Restart {
     signal: OwnedHandle,
     stage: PathBuf,
+    pub active_displays: BTreeSet<String>,
 }
 
 pub fn restart_stage(arguments: &[OsString]) -> Option<Restart> {
@@ -176,6 +190,10 @@ pub fn restart_stage(arguments: &[OsString]) -> Option<Restart> {
     let signal = unsafe { OpenEventW(EVENT_MODIFY_STATE, 0, ready_event_name(stage).as_ptr()) };
     (!signal.is_null()).then(|| Restart {
         signal: unsafe { OwnedHandle::from_raw_handle(signal) },
+        active_displays: fs::read(directory.join(ACTIVE_DISPLAYS))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default(),
         stage: directory,
     })
 }
@@ -322,6 +340,7 @@ pub fn finish_restart(restart: Restart, language: Language) {
             }
         }
         let _ = fs::remove_file(stage.join(REPLACEMENT_EXE));
+        let _ = fs::remove_file(stage.join(ACTIVE_DISPLAYS));
         let _ = fs::remove_dir(stage);
     });
     if let Ok(message) = std::env::var(RECOVERY_MESSAGE) {

@@ -132,9 +132,9 @@ fn placement_observation_tolerates_rounding_but_detects_an_ignored_resize() {
 }
 
 #[test]
-fn only_a_stable_oversize_at_the_requested_origin_is_a_minimum() {
+fn a_stable_oversize_after_correcting_the_origin_is_a_minimum() {
     let requested = Rect::new(-1000, 10, 500, 800);
-    let first = Rect::new(-1000, 10, 700, 801);
+    let first = Rect::new(-950, 90, 699, 801);
     let corrected = Rect::new(-999, 10, 700, 801);
     assert_eq!(
         requested.observed_minimum(first, corrected),
@@ -146,6 +146,8 @@ fn only_a_stable_oversize_at_the_requested_origin_is_a_minimum() {
     );
     let drifted = Rect::new(-950, 10, 700, 801);
     assert_eq!(requested.observed_minimum(first, drifted), Size::default());
+    let resized = Rect::new(-1000, 10, 650, 801);
+    assert_eq!(requested.observed_minimum(first, resized), Size::default());
 }
 
 #[test]
@@ -175,6 +177,29 @@ fn wide_windows_stack_when_they_only_fit_vertically() {
     // A wider monitor has room for the original orientation again.
     let frames = tree.frames_with_minimums(Rect::new(0, 0, 1600, 900), 10, &minimums);
     assert_eq!(frames[&2], Rect::new(805, 0, 795, 900));
+}
+
+#[test]
+fn tall_window_can_take_a_full_column_when_three_windows_do_not_fit() {
+    let tree = Layout::split(
+        Axis::Horizontal,
+        0.5,
+        Layout::split(Axis::Vertical, 0.5, Layout::Leaf(1), Layout::Leaf(2)),
+        Layout::Leaf(3),
+    );
+    let area = Rect::new(8, 8, 2032, 1080);
+    let minimums = BTreeMap::from([
+        (1, Size { w: 700, h: 400 }),
+        (2, Size { w: 1030, h: 840 }),
+        (3, Size { w: 640, h: 380 }),
+    ]);
+    assert!(tree.frames_with_minimums(area, 8, &minimums)[&2].h < 840);
+    let fitted = tree.regroup_three_windows(area, 8, &minimums).unwrap();
+    let frames = fitted.frames_with_minimums(area, 8, &minimums);
+    assert_eq!(frames[&2], Rect::new(1010, 8, 1030, 1080));
+    assert_eq!(frames[&1], Rect::new(8, 8, 994, 536));
+    assert_eq!(frames[&3], Rect::new(8, 552, 994, 536));
+    assert!(fitted.regroup_three_windows(area, 8, &minimums).is_none());
 }
 
 #[test]

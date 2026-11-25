@@ -1,6 +1,6 @@
 [package]
 name = "windows-cosmic-tile"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 rust-version = "1.85"
 description = "Native Win32 tiling window manager inspired by COSMIC"

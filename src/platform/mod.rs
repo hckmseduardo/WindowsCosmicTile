@@ -197,14 +197,15 @@ unsafe fn show_menu(manager: &mut Manager) {
             false,
         );
     }
-    if manager.failures > 0 {
+    let movement_failures = manager.movement_failures();
+    if movement_failures > 0 {
         append(
             menu,
             0,
             &format!(
                 "{}: {}",
                 language.text("Windows refusing movement"),
-                manager.failures
+                movement_failures
             ),
             false,
         );

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5
+
+- Retry a rejected tile placement with separate move and resize requests when the window also missed its target position.
+- Recheck windows that move after tiling.
+- Give a tall window a full column in a three-window layout when all three windows fit that arrangement.
+
 ## 0.2.4
 
 - Adjust tile sizes when an app repeatedly stops at a larger size than requested.

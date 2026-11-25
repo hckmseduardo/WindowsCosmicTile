@@ -11,18 +11,18 @@ Independent monitors · Visible focus · Keyboard resizing · No web runtime
 
 [![Windows builds](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml/badge.svg)](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml)
 
-[Official website](https://cosmictile.app.amazing-ai.tools) · [Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.2.4) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
+[Official website](https://cosmictile.app.amazing-ai.tools) · [Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.2.5) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
 
 </div>
 
-> **v0.2.4 preview.** Independent project, not affiliated with System76. Native builds are provided for **x64** and **ARM64**. This is a first Windows implementation, not a claim of complete COSMIC feature parity or compatibility with every application.
+> **v0.2.5 preview.** Independent project, not affiliated with System76. Native builds are provided for **x64** and **ARM64**. This is a first Windows implementation, not a claim of complete COSMIC feature parity or compatibility with every application.
 
 ## Choose your download
 
 | Your computer | Native package |
 | --- | --- |
-| Intel / AMD 64-bit Windows | [Windows x64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.4/WindowsCosmicTile-v0.2.4-windows-x64.zip) |
-| Windows on ARM, including Snapdragon | [Windows ARM64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.4/WindowsCosmicTile-v0.2.4-windows-arm64.zip) |
+| Intel / AMD 64-bit Windows | [Windows x64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.5/WindowsCosmicTile-v0.2.5-windows-x64.zip) |
+| Windows on ARM, including Snapdragon | [Windows ARM64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.5/WindowsCosmicTile-v0.2.5-windows-arm64.zip) |
 
 The ARM64 file is built for `aarch64-pc-windows-msvc`; it is not a renamed x64 executable. Both are 64-bit builds. The app targets current Windows 10/11 desktop systems; Windows 11 is recommended, particularly on ARM. Windows 10 application compatibility has not been interactively validated.
 
@@ -66,7 +66,7 @@ The executable is **not Authenticode signed**. SmartScreen can warn about an unk
 Every release ZIP has a matching `.sha256` file:
 
 ```powershell
-Get-FileHash .\WindowsCosmicTile-v0.2.4-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\WindowsCosmicTile-v0.2.5-windows-x64.zip -Algorithm SHA256
 ```
 
 Compare the hash with the text in the corresponding checksum file.
@@ -174,7 +174,7 @@ The portable engine can also be tested on macOS/Linux with `cargo test`; the app
 | `src/platform/hotkeys.rs` | Permanent and temporary global hotkeys |
 | `src/platform/mod.rs` | Win32 message loop, tray menu and focus-event hook |
 
-The process is per-monitor DPI aware. Geometry comes from `MONITORINFO.rcWork`, and DWM visible bounds compensate for invisible resize borders. A foreground-event hook refreshes state, with roughly 360 ms reconciliation and 120 ms hint polling as fallback. Cross-process positioning is asynchronous. CosmicTile restores maximized windows before measuring borders and checks the resulting bounds before making one corrective placement request. If the window still stops at the same larger size, CosmicTile uses it as a minimum and adjusts the split when there is room. Mouse dragging pauses reconciliation.
+The process is per-monitor DPI aware. Geometry comes from `MONITORINFO.rcWork`, and DWM visible bounds compensate for invisible resize borders. A foreground-event hook refreshes state, with roughly 360 ms reconciliation and 120 ms hint polling as fallback. Cross-process positioning is asynchronous. CosmicTile restores maximized windows before measuring borders and can retry a failed move and resize separately. When it observes a stable minimum size, it adjusts the split and can regroup a three-window layout if the existing arrangement is too small. Reconciliation watches for windows that move after placement and pauses during mouse dragging.
 
 ## Troubleshooting and limitations
 

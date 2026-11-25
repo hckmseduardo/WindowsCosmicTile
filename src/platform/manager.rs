@@ -23,13 +23,46 @@ use windows_sys::Win32::{
 const POSITION_TIMEOUT: Duration = Duration::from_secs(2);
 const POSITION_SETTLE_TIME: Duration = Duration::from_millis(300);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PositionKind {
+    Tile,
+    Transfer,
+}
 struct PendingPosition {
     frame: Rect,
     deadline: Instant,
     pid: u32,
+    kind: PositionKind,
     // None while waiting for a maximized window to restore.
     check_after: Option<Instant>,
     before_correction: Option<Rect>,
+}
+struct TilePosition {
+    frame: Rect,
+    pid: u32,
+    repaired_from: Option<Rect>,
+    refused: Option<Rect>,
+}
+impl TilePosition {
+    fn repair_if_drifted(&mut self, window: &Window) -> bool {
+        if window.pid != self.pid {
+            return false;
+        }
+        if self.frame.matches_placement(window.frame) {
+            self.refused = None;
+            return false;
+        }
+        if [self.repaired_from, self.refused]
+            .into_iter()
+            .flatten()
+            .any(|frame| frame.matches_placement(window.frame))
+        {
+            self.refused = Some(window.frame);
+            return false;
+        }
+        self.repaired_from = Some(window.frame);
+        true
+    }
 }
 struct WindowMinimum {
     pid: u32,
@@ -49,6 +82,7 @@ pub struct Manager {
     pub floating: BTreeSet<isize>,
     pub pending_transfers: Transfers,
     pending_positions: BTreeMap<isize, PendingPosition>,
+    tile_positions: BTreeMap<isize, TilePosition>,
     minimum_sizes: BTreeMap<isize, WindowMinimum>,
     pub previous_focus: Option<isize>,
     pub command_target: Option<isize>,
@@ -58,7 +92,7 @@ pub struct Manager {
     pub gap: i32,
     pub language: Language,
     pub conflicts: usize,
-    pub failures: usize,
+    transfer_failures: usize,
     pub updater: cosmitile::updates::Updater,
     pub auto_updates: bool,
     pub last_update_check: u64,
@@ -88,6 +122,7 @@ impl Manager {
             floating: BTreeSet::new(),
             pending_transfers: Transfers::default(),
             pending_positions: BTreeMap::new(),
+            tile_positions: BTreeMap::new(),
             minimum_sizes: BTreeMap::new(),
             previous_focus: None,
             command_target: None,
@@ -97,7 +132,7 @@ impl Manager {
             gap: 10,
             language: Language::English,
             conflicts: 0,
-            failures: 0,
+            transfer_failures: 0,
             updater: cosmitile::updates::Updater::default(),
             auto_updates: true,
             last_update_check: 0,
@@ -218,6 +253,7 @@ impl Manager {
         if let Some(tree) = self.layouts.remove(key) {
             for id in tree.ids() {
                 self.pending_positions.remove(&id);
+                self.tile_positions.remove(&id);
             }
         }
         for id in ids {
@@ -233,6 +269,7 @@ impl Manager {
     pub unsafe fn restore_all(&mut self) {
         self.set_resize(false);
         self.pending_positions.clear();
+        self.tile_positions.clear();
         self.minimum_sizes.clear();
         self.pending_transfers = Transfers::default();
         let owners: BTreeSet<_> = self
@@ -363,20 +400,22 @@ impl Manager {
         }
         if reflow || previous != self.layouts || old_monitors != self.monitors {
             self.apply();
+        } else {
+            self.repair_tile_positions();
         }
         if current_focus.is_some_and(|id| self.windows.contains_key(&id)) {
             self.previous_focus = current_focus;
         }
         self.refresh_hint();
     }
-    unsafe fn queue_position(&mut self, id: isize, frame: Rect) -> bool {
+    unsafe fn queue_position(&mut self, id: isize, frame: Rect, kind: PositionKind) -> bool {
         let Some(window) = self.windows.get(&id) else {
             return false;
         };
         let process = window.pid;
         let now = Instant::now();
         if let Some(pending) = self.pending_positions.get_mut(&id) {
-            if pending.pid == process && now < pending.deadline {
+            if pending.pid == process && pending.kind == kind && now < pending.deadline {
                 if pending.check_after.is_none() {
                     pending.frame = frame;
                     return true;
@@ -386,7 +425,7 @@ impl Manager {
                 }
             }
         }
-        let check_after = match set_frame(id, frame) {
+        let check_after = match set_frame(id, frame, PositionMode::Standard) {
             PositionStatus::Queued => Some(now + POSITION_SETTLE_TIME),
             PositionStatus::Restoring => None,
             PositionStatus::Failed => {
@@ -400,11 +439,33 @@ impl Manager {
                 frame,
                 deadline: now + POSITION_TIMEOUT,
                 pid: process,
+                kind,
                 check_after,
                 before_correction: None,
             },
         );
         true
+    }
+    unsafe fn repair_tile_positions(&mut self) {
+        // Recheck windows that move after placement settles. Skip the same
+        // off-tile frame after a repair attempt to avoid fighting the app.
+        let requests: Vec<_> = self
+            .tile_positions
+            .iter_mut()
+            .filter_map(|(id, tile)| {
+                let window = self.windows.get(id)?;
+                (!self.pending_positions.contains_key(id) && tile.repair_if_drifted(window))
+                    .then_some((*id, tile.frame, window.frame))
+            })
+            .collect();
+        for (id, frame, actual) in requests {
+            if !self.queue_position(id, frame, PositionKind::Tile) {
+                self.tile_positions
+                    .get_mut(&id)
+                    .expect("repair requests belong to tracked tiles")
+                    .refused = Some(actual);
+            }
+        }
     }
     unsafe fn retry_positions(&mut self) -> bool {
         let now = Instant::now();
@@ -418,9 +479,20 @@ impl Manager {
             {
                 return false;
             }
+            let tile = match request.kind {
+                PositionKind::Tile => self.tile_positions.get_mut(id),
+                PositionKind::Transfer => None,
+            };
+            let mut refuse = |tile: Option<&mut TilePosition>, actual: Option<Rect>| {
+                if let Some(tile) = tile {
+                    tile.refused = actual;
+                } else if request.kind == PositionKind::Transfer {
+                    self.transfer_failures += 1;
+                }
+                false
+            };
             if now >= request.deadline {
-                self.failures += 1;
-                return false;
+                return refuse(tile, visible_frame(hwnd));
             }
             if IsZoomed(hwnd) != 0 {
                 return true;
@@ -435,16 +507,19 @@ impl Manager {
                 let Some(monitor) = monitor_for(&self.monitors, actual) else {
                     return false;
                 };
-                if request.frame.matches_placement(actual)
-                    || monitor_for(&self.monitors, request.frame).as_deref() != Some(&monitor)
-                {
+                if request.frame.matches_placement(actual) {
+                    if let Some(tile) = tile {
+                        tile.refused = None;
+                    }
+                    return false;
+                }
+                if monitor_for(&self.monitors, request.frame).as_deref() != Some(&monitor) {
                     return false;
                 }
                 if let Some(before) = request.before_correction {
                     let observed = request.frame.observed_minimum(before, actual);
-                    // Learn only from tiles, since a monitor transfer also
-                    // uses the placement queue with an intermediate frame.
-                    if observed != Size::default()
+                    if request.kind == PositionKind::Tile
+                        && observed != Size::default()
                         && self
                             .layouts
                             .get(&monitor)
@@ -487,35 +562,35 @@ impl Manager {
                             return false;
                         }
                     }
-                    self.failures += 1;
-                    return false;
+                    return refuse(tile, Some(actual));
                 }
                 // Recalculate invisible borders after the first placement settles.
-                match set_frame(*id, request.frame) {
+                let mode = if request.kind == PositionKind::Tile {
+                    PositionMode::CorrectTile
+                } else {
+                    PositionMode::Standard
+                };
+                return match set_frame(*id, request.frame, mode) {
                     PositionStatus::Queued => {
                         request.before_correction = Some(actual);
                         request.check_after = Some(now + POSITION_SETTLE_TIME);
                         request.deadline = now + POSITION_TIMEOUT;
-                        return true;
+                        true
                     }
                     PositionStatus::Restoring => {
                         request.check_after = None;
-                        return true;
+                        true
                     }
-                    PositionStatus::Failed => self.failures += 1,
-                }
-                return false;
+                    PositionStatus::Failed => refuse(tile, Some(actual)),
+                };
             }
-            match set_frame(*id, request.frame) {
+            match set_frame(*id, request.frame, PositionMode::Standard) {
                 PositionStatus::Queued => {
                     request.check_after = Some(now + POSITION_SETTLE_TIME);
                     request.deadline = now + POSITION_TIMEOUT;
                     true
                 }
-                PositionStatus::Failed => {
-                    self.failures += 1;
-                    false
-                }
+                PositionStatus::Failed => refuse(tile, visible_frame(hwnd)),
                 PositionStatus::Restoring => true,
             }
         });
@@ -528,31 +603,65 @@ impl Manager {
             .map(|(id, minimum)| (*id, minimum.size))
             .collect()
     }
+    pub fn movement_failures(&self) -> usize {
+        self.transfer_failures
+            + self
+                .tile_positions
+                .values()
+                .filter(|tile| tile.refused.is_some())
+                .count()
+    }
     pub unsafe fn apply(&mut self) {
-        self.failures = 0;
+        self.transfer_failures = 0;
         let mut requests = Vec::new();
         for monitor in &self.monitors {
             if !self.policy.enabled(&monitor.id) {
                 continue;
             }
-            if let Some(tree) = self.layouts.get(&monitor.id) {
-                requests.extend(tree.frames_with_minimums(
-                    monitor.work.inset(self.gap),
-                    self.gap,
-                    &self.monitor_minimums(&monitor.id),
-                ));
+            let minimums = self.monitor_minimums(&monitor.id);
+            if let Some(tree) = self.layouts.get_mut(&monitor.id) {
+                let area = monitor.work.inset(self.gap);
+                if let Some(fitted) = tree.regroup_three_windows(area, self.gap, &minimums) {
+                    *tree = fitted;
+                }
+                requests.extend(tree.frames_with_minimums(area, self.gap, &minimums));
             }
         }
+        let mut previous = std::mem::take(&mut self.tile_positions);
         for (id, frame) in requests {
-            if self
-                .windows
-                .get(&id)
-                .is_some_and(|window| pid(id as HWND) == window.pid)
-                && !self.queue_position(id, frame)
-            {
-                self.failures += 1;
+            let Some(window) = self.windows.get(&id) else {
+                continue;
+            };
+            let process = window.pid;
+            let known_frame = window.frame;
+            if pid(id as HWND) != process {
+                continue;
             }
+            if let Some(tile) = previous
+                .remove(&id)
+                .filter(|tile| tile.pid == process && tile.frame == frame)
+            {
+                self.tile_positions.insert(id, tile);
+                continue;
+            }
+            let actual = visible_frame(id as HWND);
+            let mut tile = TilePosition {
+                frame,
+                pid: process,
+                repaired_from: None,
+                refused: None,
+            };
+            let needs_position = self.pending_positions.contains_key(&id)
+                || IsZoomed(id as HWND) != 0
+                || actual.is_none_or(|actual| !frame.matches_placement(actual));
+            if needs_position && !self.queue_position(id, frame, PositionKind::Tile) {
+                tile.refused = Some(actual.unwrap_or(known_frame));
+            }
+            self.tile_positions.insert(id, tile);
         }
+        self.pending_positions.retain(|id, request| {
+            request.kind == PositionKind::Transfer || self.tile_positions.contains_key(id)
+        });
         self.refresh_hint();
     }
     pub unsafe fn current(&self) -> Option<(isize, String)> {
@@ -661,6 +770,7 @@ impl Manager {
                 return;
             }
             self.pending_positions.remove(&id);
+            self.tile_positions.remove(&id);
             self.floating.insert(id);
             if let Some(tree) = self.layouts.remove(&key).and_then(|tree| tree.remove(id)) {
                 self.layouts.insert(key, tree);
@@ -689,8 +799,8 @@ impl Manager {
         let mut frame = window.frame.clamped(destination.work.inset(self.gap));
         frame.x = destination.work.x + self.gap;
         frame.y = destination.work.y + self.gap;
-        if !self.queue_position(id, frame) {
-            self.failures += 1;
+        if !self.queue_position(id, frame, PositionKind::Transfer) {
+            self.transfer_failures += 1;
             return;
         }
         if let Some(tree) = self.layouts.remove(&key).and_then(|tree| tree.remove(id)) {
@@ -709,5 +819,41 @@ impl Manager {
         hotkeys::unregister(self.hwnd);
         self.hint.destroy();
         self.save_settings();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_settled_tile_can_be_repaired_without_repeating_a_rejected_move() {
+        let frame = Rect::new(8, 552, 994, 536);
+        let mut tile = TilePosition {
+            frame,
+            pid: 12,
+            repaired_from: None,
+            refused: None,
+        };
+        let mut window = Window {
+            id: 1,
+            frame,
+            pid: 12,
+        };
+        assert!(!tile.repair_if_drifted(&window));
+
+        window.frame = Rect::new(120, 149, 1030, 840);
+        assert!(tile.repair_if_drifted(&window));
+        assert!(!tile.repair_if_drifted(&window));
+        assert_eq!(tile.refused, Some(window.frame));
+
+        window.frame = Rect::new(8, 552, 1030, 840);
+        assert!(tile.repair_if_drifted(&window));
+        tile.refused = Some(window.frame);
+        assert!(!tile.repair_if_drifted(&window));
+
+        window.frame = frame;
+        assert!(!tile.repair_if_drifted(&window));
+        assert_eq!(tile.refused, None);
     }
 }

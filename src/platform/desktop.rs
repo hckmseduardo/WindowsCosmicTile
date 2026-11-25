@@ -181,7 +181,12 @@ pub enum PositionStatus {
     Restoring,
     Failed,
 }
-pub unsafe fn set_frame(id: isize, frame: Rect) -> PositionStatus {
+#[derive(Clone, Copy)]
+pub enum PositionMode {
+    Standard,
+    CorrectTile,
+}
+pub unsafe fn set_frame(id: isize, frame: Rect, mode: PositionMode) -> PositionStatus {
     let hwnd = id as HWND;
     if IsWindow(hwnd) == 0 {
         return PositionStatus::Failed;
@@ -204,15 +209,26 @@ pub unsafe fn set_frame(id: isize, frame: Rect) -> PositionStatus {
     let top = visible.y - raw.y;
     let right = raw.right() - visible.right();
     let bottom = raw.bottom() - visible.bottom();
-    let queued = SetWindowPos(
-        hwnd,
-        null_mut(),
-        frame.x - left,
-        frame.y - top,
-        (frame.w + left + right).max(1),
-        (frame.h + top + bottom).max(1),
-        SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS,
-    ) != 0;
+    let position = |flags| {
+        SetWindowPos(
+            hwnd,
+            null_mut(),
+            frame.x - left,
+            frame.y - top,
+            (frame.w + left + right).max(1),
+            (frame.h + top + bottom).max(1),
+            flags | SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS,
+        ) != 0
+    };
+    let queued = if matches!(mode, PositionMode::CorrectTile) && !frame.matches_origin(visible) {
+        // A window can reject both parts of a combined placement when the
+        // requested size is too small. Give the move its own request.
+        let moved = position(SWP_NOSIZE);
+        let sized = position(SWP_NOMOVE);
+        moved || sized
+    } else {
+        position(0)
+    };
     if queued {
         PositionStatus::Queued
     } else {

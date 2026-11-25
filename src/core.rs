@@ -78,22 +78,21 @@ impl Rect {
     }
     pub fn matches_placement(self, actual: Self) -> bool {
         // DPI and DWM border conversions can round either edge by a pixel.
-        self.x.abs_diff(actual.x) <= 1
-            && self.y.abs_diff(actual.y) <= 1
+        self.matches_origin(actual)
             && self.right().abs_diff(actual.right()) <= 1
             && self.bottom().abs_diff(actual.bottom()) <= 1
     }
+    pub fn matches_origin(self, actual: Self) -> bool {
+        self.x.abs_diff(actual.x) <= 1 && self.y.abs_diff(actual.y) <= 1
+    }
     pub fn observed_minimum(self, first: Self, corrected: Self) -> Size {
-        // Both placements must have reached the tile's origin. A pending move
-        // or DWM rounding is not evidence of an application size limit.
-        if [first, corrected]
-            .iter()
-            .any(|frame| self.x.abs_diff(frame.x) > 1 || self.y.abs_diff(frame.y) > 1)
-        {
+        // The corrective move must have reached the tile so an entirely
+        // ignored placement cannot turn the window's current size into a minimum.
+        if !self.matches_origin(corrected) {
             return Size::default();
         }
         let stable_minimum = |wanted: i32, first: i32, corrected: i32| {
-            if corrected > wanted.saturating_add(2) && first == corrected {
+            if corrected > wanted.saturating_add(2) && first.abs_diff(corrected) <= 1 {
                 corrected
             } else {
                 0
@@ -144,6 +143,41 @@ impl Layout {
         let mut frames = BTreeMap::new();
         self.place(rect, gap.max(0), minimums, &mut frames);
         frames
+    }
+    pub fn regroup_three_windows(
+        &self,
+        rect: Rect,
+        gap: i32,
+        minimums: &BTreeMap<isize, Size>,
+    ) -> Option<Self> {
+        if minimums.is_empty() {
+            return None;
+        }
+        let Self::Split(_, _, a, b) = self else {
+            return None;
+        };
+        let (single, pair) = match (&**a, &**b) {
+            (Self::Leaf(id), Self::Split(_, _, first, second))
+            | (Self::Split(_, _, first, second), Self::Leaf(id)) => (id, (first, second)),
+            _ => return None,
+        };
+        let (Self::Leaf(first), Self::Leaf(second)) = (&**pair.0, &**pair.1) else {
+            return None;
+        };
+        let fits = |layout: &Self| {
+            layout
+                .frames_with_minimums(rect, gap, minimums)
+                .into_iter()
+                .all(|(id, frame)| minimums.get(&id).is_none_or(|size| size.fits(frame)))
+        };
+        // Let a window take the full span when it cannot share its current side.
+        if fits(self) {
+            return None;
+        }
+        [first, second]
+            .into_iter()
+            .map(|id| self.swapped(*single, *id))
+            .find(fits)
     }
     fn minimum_size(&self, gap: i32, minimums: &BTreeMap<isize, Size>) -> Size {
         match self {

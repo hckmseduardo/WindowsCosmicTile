@@ -1,5 +1,5 @@
-# CosmicTile v0.2.3
+# CosmicTile v0.2.4
 
-Approve an update from the tray and CosmicTile will verify it, update the current executable in place, and reopen. Saved preferences carry over, and your existing shortcuts still point to the same file. This works on Windows x64 and ARM64.
+CosmicTile now gives a tiled window more room when it repeatedly stops resizing at a larger size. When windows are too wide to sit side by side, CosmicTile stacks them if there is enough height.
 
-If you have v0.2.2 or earlier, replace your current copy with v0.2.3 once. On later releases, use **Check for updates** in the tray menu.
+On v0.2.3, choose **Check for updates** from the tray. On v0.2.2 or earlier, replace your current copy with the matching Windows x64 or ARM64 download.

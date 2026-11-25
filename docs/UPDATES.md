@@ -2,7 +2,7 @@
 
 From v0.2.3, CosmicTile can download and install an update in place after you approve it. It closes normally, replaces the executable at its current path, and reopens. Saved preferences and shortcuts continue to work. On restart, tiling starts off as usual.
 
-If you have v0.2.2 or earlier, quit CosmicTile and replace your current executable once with the matching v0.2.3 `.exe` from GitHub Releases. Keep the same file name to preserve any shortcuts. The ZIP stays available for first-time installation.
+If you have v0.2.2 or earlier, quit CosmicTile and replace your current executable with the matching `.exe` from the newest preview on GitHub Releases. Keep the same file name to preserve any shortcuts. The ZIP stays available for first-time installation.
 
 ## Checks and consent
 

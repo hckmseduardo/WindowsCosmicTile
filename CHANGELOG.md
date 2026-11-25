@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.4
+
+- Adjust tile sizes when an app repeatedly stops at a larger size than requested.
+- Stack windows vertically when their minimum widths prevent a side-by-side layout and the display has enough height.
+
 ## 0.2.3
 
 - Install updates from the tray on Windows x64 and ARM64, then restart from the same file path.

@@ -1,6 +1,8 @@
 use super::{desktop::*, hotkeys, indicator::Indicator};
 use cosmitile::{
-    core::{choose_target, neighbor, neighbor_from, Axis, Layout, MonitorState, Rect, Transfers},
+    core::{
+        choose_target, neighbor, neighbor_from, Axis, Layout, MonitorState, Rect, Size, Transfers,
+    },
     i18n::Language,
 };
 use std::{
@@ -12,6 +14,7 @@ use std::{
 use windows_sys::Win32::{
     Foundation::*,
     UI::{
+        HiDpi::GetDpiForWindow,
         Input::KeyboardAndMouse::{GetAsyncKeyState, IsWindowEnabled},
         WindowsAndMessaging::*,
     },
@@ -26,6 +29,13 @@ struct PendingPosition {
     pid: u32,
     // None while waiting for a maximized window to restore.
     check_after: Option<Instant>,
+    before_correction: Option<Rect>,
+}
+struct WindowMinimum {
+    pid: u32,
+    dpi: u32,
+    monitor: String,
+    size: Size,
 }
 pub struct Manager {
     pub keep_awake: super::keep_awake::KeepAwake,
@@ -39,6 +49,7 @@ pub struct Manager {
     pub floating: BTreeSet<isize>,
     pub pending_transfers: Transfers,
     pending_positions: BTreeMap<isize, PendingPosition>,
+    minimum_sizes: BTreeMap<isize, WindowMinimum>,
     pub previous_focus: Option<isize>,
     pub command_target: Option<isize>,
     pub hint: Indicator,
@@ -77,6 +88,7 @@ impl Manager {
             floating: BTreeSet::new(),
             pending_transfers: Transfers::default(),
             pending_positions: BTreeMap::new(),
+            minimum_sizes: BTreeMap::new(),
             previous_focus: None,
             command_target: None,
             hint: Indicator::new(),
@@ -195,6 +207,8 @@ impl Manager {
         }
     }
     pub unsafe fn release_monitor(&mut self, key: &str) {
+        self.minimum_sizes
+            .retain(|_, minimum| minimum.monitor != key);
         let ids: Vec<_> = self
             .originals
             .iter()
@@ -219,6 +233,7 @@ impl Manager {
     pub unsafe fn restore_all(&mut self) {
         self.set_resize(false);
         self.pending_positions.clear();
+        self.minimum_sizes.clear();
         self.pending_transfers = Transfers::default();
         let owners: BTreeSet<_> = self
             .originals
@@ -236,7 +251,7 @@ impl Manager {
         if GetAsyncKeyState(1) < 0 {
             return;
         }
-        self.retry_positions();
+        let mut reflow = self.retry_positions();
         let old_monitors = self.monitors.clone();
         self.monitors = monitors();
         self.policy.retain_connected(
@@ -248,6 +263,16 @@ impl Manager {
         );
         let previous = self.layouts.clone();
         self.windows = windows().into_iter().map(|w| (w.id, w)).collect();
+        let minimum_count = self.minimum_sizes.len();
+        self.minimum_sizes.retain(|id, minimum| {
+            self.windows.get(id).is_some_and(|window| {
+                window.pid == minimum.pid
+                    && GetDpiForWindow(*id as HWND) == minimum.dpi
+                    && monitor_for(&self.monitors, window.frame).as_deref()
+                        == Some(&minimum.monitor)
+            })
+        });
+        reflow |= self.minimum_sizes.len() != minimum_count;
         let keys: Vec<_> = self.layouts.keys().cloned().collect();
         for key in keys {
             if !self.policy.enabled(&key) {
@@ -318,8 +343,10 @@ impl Manager {
                     self.originals.insert(window.id, original);
                 }
             }
+            let minimums = self.monitor_minimums(&key);
             if let Some(tree) = self.layouts.get_mut(&key) {
-                let frames = tree.frames(monitor.work.inset(self.gap), self.gap);
+                let frames =
+                    tree.frames_with_minimums(monitor.work.inset(self.gap), self.gap, &minimums);
                 let preferred = current_focus
                     .filter(|id| tree.contains(*id))
                     .or(self.previous_focus.filter(|id| tree.contains(*id)));
@@ -334,7 +361,7 @@ impl Manager {
                 self.layouts.insert(key, Layout::Leaf(window.id));
             }
         }
-        if previous != self.layouts || old_monitors != self.monitors {
+        if reflow || previous != self.layouts || old_monitors != self.monitors {
             self.apply();
         }
         if current_focus.is_some_and(|id| self.windows.contains_key(&id)) {
@@ -374,12 +401,14 @@ impl Manager {
                 deadline: now + POSITION_TIMEOUT,
                 pid: process,
                 check_after,
+                before_correction: None,
             },
         );
         true
     }
-    unsafe fn retry_positions(&mut self) {
+    unsafe fn retry_positions(&mut self) -> bool {
         let now = Instant::now();
+        let mut reflow = false;
         self.pending_positions.retain(|id, request| {
             let hwnd = *id as HWND;
             if pid(hwnd) != request.pid
@@ -390,9 +419,7 @@ impl Manager {
                 return false;
             }
             if now >= request.deadline {
-                if request.check_after.is_none() {
-                    self.failures += 1;
-                }
+                self.failures += 1;
                 return false;
             }
             if IsZoomed(hwnd) != 0 {
@@ -402,15 +429,80 @@ impl Manager {
                 if now < check_after {
                     return true;
                 }
-                // The queued call can succeed before the window adopts its size.
-                // Recheck its borders without undoing a move to another display.
-                if visible_frame(hwnd).is_some_and(|actual| {
-                    !request.frame.matches_placement(actual)
-                        && monitor_for(&self.monitors, actual)
-                            == monitor_for(&self.monitors, request.frame)
-                }) && set_frame(*id, request.frame) == PositionStatus::Failed
+                let Some(actual) = visible_frame(hwnd) else {
+                    return false;
+                };
+                let Some(monitor) = monitor_for(&self.monitors, actual) else {
+                    return false;
+                };
+                if request.frame.matches_placement(actual)
+                    || monitor_for(&self.monitors, request.frame).as_deref() != Some(&monitor)
                 {
+                    return false;
+                }
+                if let Some(before) = request.before_correction {
+                    let observed = request.frame.observed_minimum(before, actual);
+                    // Learn only from tiles, since a monitor transfer also
+                    // uses the placement queue with an intermediate frame.
+                    if observed != Size::default()
+                        && self
+                            .layouts
+                            .get(&monitor)
+                            .is_some_and(|tree| tree.contains(*id))
+                    {
+                        let dpi = GetDpiForWindow(hwnd);
+                        let previous = self
+                            .minimum_sizes
+                            .get(id)
+                            .filter(|m| {
+                                m.pid == request.pid && m.dpi == dpi && m.monitor == monitor
+                            })
+                            .map(|m| m.size)
+                            .unwrap_or_default();
+                        // Learn once per axis so the layout cannot grow repeatedly
+                        // when an app adds padding to every request.
+                        let size = Size {
+                            w: if previous.w == 0 {
+                                observed.w
+                            } else {
+                                previous.w
+                            },
+                            h: if previous.h == 0 {
+                                observed.h
+                            } else {
+                                previous.h
+                            },
+                        };
+                        if size != previous {
+                            self.minimum_sizes.insert(
+                                *id,
+                                WindowMinimum {
+                                    pid: request.pid,
+                                    dpi,
+                                    monitor,
+                                    size,
+                                },
+                            );
+                            reflow = true;
+                            return false;
+                        }
+                    }
                     self.failures += 1;
+                    return false;
+                }
+                // Recalculate invisible borders after the first placement settles.
+                match set_frame(*id, request.frame) {
+                    PositionStatus::Queued => {
+                        request.before_correction = Some(actual);
+                        request.check_after = Some(now + POSITION_SETTLE_TIME);
+                        request.deadline = now + POSITION_TIMEOUT;
+                        return true;
+                    }
+                    PositionStatus::Restoring => {
+                        request.check_after = None;
+                        return true;
+                    }
+                    PositionStatus::Failed => self.failures += 1,
                 }
                 return false;
             }
@@ -427,6 +519,14 @@ impl Manager {
                 PositionStatus::Restoring => true,
             }
         });
+        reflow
+    }
+    fn monitor_minimums(&self, monitor: &str) -> BTreeMap<isize, Size> {
+        self.minimum_sizes
+            .iter()
+            .filter(|(_, minimum)| minimum.monitor == monitor)
+            .map(|(id, minimum)| (*id, minimum.size))
+            .collect()
     }
     pub unsafe fn apply(&mut self) {
         self.failures = 0;
@@ -436,7 +536,11 @@ impl Manager {
                 continue;
             }
             if let Some(tree) = self.layouts.get(&monitor.id) {
-                requests.extend(tree.frames(monitor.work.inset(self.gap), self.gap));
+                requests.extend(tree.frames_with_minimums(
+                    monitor.work.inset(self.gap),
+                    self.gap,
+                    &self.monitor_minimums(&monitor.id),
+                ));
             }
         }
         for (id, frame) in requests {

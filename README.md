@@ -11,18 +11,18 @@ Independent monitors · Visible focus · Keyboard resizing · No web runtime
 
 [![Windows builds](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml/badge.svg)](https://github.com/hckmseduardo/WindowsCosmicTile/actions/workflows/build.yml)
 
-[Official website](https://cosmictile.app.amazing-ai.tools) · [Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.2.5) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
+[Official website](https://cosmictile.app.amazing-ai.tools) · [Download preview](https://github.com/hckmseduardo/WindowsCosmicTile/releases/tag/v0.2.6) · [Quick start](docs/QUICKSTART.md) · [Shortcuts](#keyboard-shortcuts) · [Report a bug](https://github.com/hckmseduardo/WindowsCosmicTile/issues/new?template=bug_report.md)
 
 </div>
 
-> **v0.2.5 preview.** Independent project, not affiliated with System76. Native builds are provided for **x64** and **ARM64**. This is a first Windows implementation, not a claim of complete COSMIC feature parity or compatibility with every application.
+> **v0.2.6 preview.** Independent project, not affiliated with System76. Native builds are provided for **x64** and **ARM64**. This is a first Windows implementation, not a claim of complete COSMIC feature parity or compatibility with every application.
 
 ## Choose your download
 
 | Your computer | Native package |
 | --- | --- |
-| Intel / AMD 64-bit Windows | [Windows x64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.5/WindowsCosmicTile-v0.2.5-windows-x64.zip) |
-| Windows on ARM, including Snapdragon | [Windows ARM64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.5/WindowsCosmicTile-v0.2.5-windows-arm64.zip) |
+| Intel / AMD 64-bit Windows | [Windows x64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.6/WindowsCosmicTile-v0.2.6-windows-x64.zip) |
+| Windows on ARM, including Snapdragon | [Windows ARM64 ZIP](https://github.com/hckmseduardo/WindowsCosmicTile/releases/download/v0.2.6/WindowsCosmicTile-v0.2.6-windows-arm64.zip) |
 
 The ARM64 file is built for `aarch64-pc-windows-msvc`; it is not a renamed x64 executable. Both are 64-bit builds. The app targets current Windows 10/11 desktop systems; Windows 11 is recommended, particularly on ARM. Windows 10 application compatibility has not been interactively validated.
 
@@ -66,7 +66,7 @@ The executable is **not Authenticode signed**. SmartScreen can warn about an unk
 Every release ZIP has a matching `.sha256` file:
 
 ```powershell
-Get-FileHash .\WindowsCosmicTile-v0.2.5-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\WindowsCosmicTile-v0.2.6-windows-x64.zip -Algorithm SHA256
 ```
 
 Compare the hash with the text in the corresponding checksum file.
